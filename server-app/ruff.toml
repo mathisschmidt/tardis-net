@@ -1,0 +1,7 @@
+line-length = 100
+target-version = "py311"
+
+[lint]
+# B008 flags calls in default arguments — which is exactly how FastAPI's
+# Depends() / Form() are meant to be written.
+ignore = ["B008"]

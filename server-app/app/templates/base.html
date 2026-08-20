@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#050914" />
+    <title>{% block title %}{{ app_name }}{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='img/favicon.svg') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}" />
+    <script src="{{ url_for('static', path='vendor/htmx.min.js') }}"></script>
+    <script src="{{ url_for('static', path='js/app.js') }}"></script>
+    <script defer src="{{ url_for('static', path='vendor/alpine.min.js') }}"></script>
+  </head>
+  <body class="relative min-h-full overflow-x-hidden bg-night-950 text-slate-300 antialiased">
+    <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
+      <div class="aurora aurora-1"></div>
+      <div class="aurora aurora-2"></div>
+      <div class="aurora aurora-3"></div>
+      <div class="starfield"></div>
+      <div class="vignette"></div>
+    </div>
+
+    {% block body %}{% endblock %}
+
+    <div
+      class="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4"
+      x-data
+      x-cloak
+    >
+      <template x-if="$store.tardis.toast">
+        <div
+          class="pointer-events-auto flex items-center gap-3 rounded-full border px-5 py-3 text-sm shadow-glow backdrop-blur-xl"
+          :class="$store.tardis.toastTone === 'error'
+            ? 'border-rose-400/30 bg-rose-950/70 text-rose-100'
+            : 'border-cyan-300/25 bg-night-900/80 text-cyan-100'"
+          x-transition:enter="transition duration-300 ease-out"
+          x-transition:enter-start="translate-y-4 opacity-0"
+          x-transition:leave="transition duration-200 ease-in"
+          x-transition:leave-end="translate-y-2 opacity-0"
+        >
+          <span
+            class="size-2 rounded-full"
+            :class="$store.tardis.toastTone === 'error' ? 'bg-rose-400' : 'bg-cyan-300'"
+          ></span>
+          <span x-text="$store.tardis.toast"></span>
+        </div>
+      </template>
+    </div>
+  </body>
+</html>

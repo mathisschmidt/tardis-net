@@ -1,0 +1,122 @@
+{# Swapped wholesale into #login-card by htmx on every failed attempt. #}
+<div x-data="otpForm()">
+  {% if not enrolled and enrolment %}
+    <div class="mb-6">
+      <div class="mb-4 flex items-center gap-2">
+        <span class="badge badge-cyan">Step 1</span>
+        <h2 class="text-sm font-medium text-slate-200">Scan with your authenticator</h2>
+      </div>
+
+      <div class="flex flex-col items-center gap-4">
+        <div class="qr-frame">
+          <img
+            src="{{ enrolment.qr_data_uri }}"
+            alt="TOTP enrolment QR code for {{ issuer }}"
+            class="size-44 rounded-lg"
+            width="176"
+            height="176"
+          />
+        </div>
+
+        <div class="w-full">
+          <p class="mb-2 text-center text-xs uppercase tracking-[0.2em] text-slate-500">
+            or type the key
+          </p>
+          <button
+            type="button"
+            class="secret-key group"
+            @click="copySecret('{{ enrolment.secret }}')"
+            title="Copy setup key"
+          >
+            <span class="font-mono text-sm tracking-[0.18em] text-cyan-200">
+              {{ enrolment.formatted_secret }}
+            </span>
+            <span class="text-[11px] uppercase tracking-widest text-slate-500 group-hover:text-cyan-300"
+                  x-text="copied ? 'copied' : 'copy'"></span>
+          </button>
+          <p class="mt-3 text-center text-xs text-slate-500">
+            Account <span class="text-slate-400">{{ account }}</span> ·
+            Issuer <span class="text-slate-400">{{ issuer }}</span>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="mb-5 flex items-center gap-2">
+      <span class="badge badge-cyan">Step 2</span>
+      <h2 class="text-sm font-medium text-slate-200">Confirm the pairing</h2>
+    </div>
+  {% endif %}
+
+  <form
+    hx-post="/login"
+    hx-target="#login-card"
+    hx-swap="innerHTML"
+    hx-disabled-elt="find button[type=submit]"
+    @htmx:before-request="submitting = true"
+    @htmx:after-request="submitting = false"
+    x-ref="form"
+  >
+    <input type="hidden" name="code" :value="code" />
+
+    <label class="mb-3 block text-xs uppercase tracking-[0.2em] text-slate-500" for="otp-0">
+      {% if enrolled %}Access code{% else %}Confirmation code{% endif %}
+    </label>
+
+    {# Six plain inputs rather than an x-for loop: re-rendering a loop on every
+       keystroke would steal focus from the box the operator is typing into. #}
+    <div class="flex justify-between gap-2" @paste.prevent="onPaste($event)">
+      {% for index in range(6) %}
+        <input
+          class="otp-box"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength="1"
+          id="otp-{{ index }}"
+          aria-label="Digit {{ index + 1 }} of 6"
+          :class="{ 'otp-box-filled': digits[{{ index }}] !== '' }"
+          @input="onInput({{ index }}, $event)"
+          @keydown="onKeydown({{ index }}, $event)"
+          @focus="$event.target.select()"
+        />
+      {% endfor %}
+    </div>
+
+    {% if error %}
+      <p class="mt-4 flex items-start gap-2 text-sm text-rose-300" role="alert">
+        <svg viewBox="0 0 20 20" class="mt-0.5 size-4 shrink-0" fill="currentColor">
+          <path d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 4a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1zm0 8.5a1.1 1.1 0 1 1 0-2.2 1.1 1.1 0 0 1 0 2.2z" />
+        </svg>
+        <span>{{ error }}</span>
+      </p>
+    {% endif %}
+
+    {% if locked_for %}
+      <p class="mt-3 text-xs text-amber-300/80">
+        Locked for {{ locked_for }} more seconds.
+      </p>
+    {% endif %}
+
+    <button
+      type="submit"
+      class="btn-primary mt-6 w-full"
+      :disabled="code.length !== 6 || submitting"
+    >
+      <span x-show="!submitting">
+        {% if enrolled %}Unlock console{% else %}Pair &amp; enter{% endif %}
+      </span>
+      <span x-show="submitting" class="flex items-center justify-center gap-2" x-cloak>
+        <span class="spinner"></span> Checking…
+      </span>
+    </button>
+  </form>
+
+  {% if not enrolled %}
+    <form hx-post="/login/new-key" hx-target="#login-card" hx-swap="innerHTML" class="mt-4">
+      <button type="submit" class="w-full text-center text-xs text-slate-500 transition hover:text-cyan-300">
+        Lost the QR code? Generate a new key
+      </button>
+    </form>
+  {% endif %}
+</div>

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Sign in · {{ app_name }}{% endblock %}
+
+{% block body %}
+<main class="flex min-h-screen items-center justify-center px-4 py-12">
+  <section class="w-full max-w-md">
+    <div class="mb-8 flex flex-col items-center text-center">
+      <div class="mb-5 grid size-14 place-items-center rounded-2xl border border-cyan-300/20 bg-night-900/70 shadow-glow">
+        <svg viewBox="0 0 24 24" class="size-7 text-cyan-300" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M6 8.5 12 4l6 4.5v10a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 18.5z" />
+          <path d="M12 4v16M6 9.5h12" />
+        </svg>
+      </div>
+      <h1 class="text-2xl font-semibold tracking-tight text-slate-100">{{ app_name }}</h1>
+      <p class="mt-2 text-sm text-slate-400">
+        {% if enrolled %}
+          Enter the code from your authenticator to reach the console.
+        {% else %}
+          Pair an authenticator app to claim this console.
+        {% endif %}
+      </p>
+    </div>
+
+    <div id="login-card" class="glass-card p-7">
+      {% include "partials/login_form.html" %}
+    </div>
+
+    <p class="mt-6 text-center text-xs text-slate-600">
+      One operator, one console. Codes rotate every 30 seconds.
+    </p>
+  </section>
+</main>
+{% endblock %}
