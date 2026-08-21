@@ -27,11 +27,11 @@
           <span
             class="absolute inline-flex size-full animate-ping rounded-full opacity-75"
             :class="$store.tardis.dotClass"
-            x-show="$store.tardis.machine.status !== 'offline'"
+            x-show="$store.tardis.machine.linked && $store.tardis.machine.status !== 'offline'"
           ></span>
           <span class="relative inline-flex size-2 rounded-full" :class="$store.tardis.dotClass"></span>
         </span>
-        <span x-text="$store.tardis.machine.label">{{ machine.label }}</span>
+        <span x-text="$store.tardis.pillLabel()">{{ machine.label }}</span>
       </span>
 
       <form hx-post="/logout" hx-swap="none">
@@ -110,20 +110,14 @@
       </div>
     </section>
 
-    <!-- Telemetry ------------------------------------------------------- -->
-    <section class="mt-6 grid gap-4 sm:grid-cols-3">
-      <div class="glass-card p-5">
-        <p class="stat-label">State</p>
-        <p class="stat-value" x-text="$store.tardis.machine.label">{{ machine.label }}</p>
-      </div>
-      <div class="glass-card p-5">
-        <p class="stat-label">Since last change</p>
-        <p class="stat-value" x-text="$store.tardis.elapsedLabel()">—</p>
-      </div>
-      <div class="glass-card p-5">
-        <p class="stat-label">Boot cycles</p>
-        <p class="stat-value" x-text="$store.tardis.machine.boot_count">{{ machine.boot_count }}</p>
-      </div>
+    <!-- Pairing key ------------------------------------------------------- -->
+    <section class="glass-card mt-6 p-5">
+      <p class="stat-label">Pairing key</p>
+      <p class="mt-1 break-all font-mono text-lg tracking-wide text-slate-100">{{ pairing_key }}</p>
+      <p class="mt-2 text-xs text-slate-500">
+        Enter this on {{ machine.name }} so it can authenticate its status polls and acks. Keep it
+        private — anyone with this key can impersonate the hardware.
+      </p>
     </section>
 
     <!-- Preferences ----------------------------------------------------- -->

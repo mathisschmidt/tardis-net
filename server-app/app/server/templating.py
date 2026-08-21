@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.templating import Jinja2Templates
 
-from .config import BASE_DIR, settings
+from ..core.config import BASE_DIR, settings
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 templates.env.globals.update(

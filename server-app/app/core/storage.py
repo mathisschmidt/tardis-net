@@ -16,6 +16,8 @@ from typing import Any
 DEFAULT_STATE: dict[str, Any] = {
     "version": 1,
     "secret_key": None,
+    "pairing_key": None,  # hardware auth key for the poll/ack handshake, see machine.py
+    "hardware": {"last_seen": None},  # last authenticated poll from the hardware side
     "user": None,  # {"totp_secret", "created_at", "last_login", "last_counter"}
     # Secret offered on the enrolment screen, kept until the code confirms it.
     "pending_secret": None,

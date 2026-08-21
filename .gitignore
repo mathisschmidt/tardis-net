@@ -13,3 +13,4 @@ node_modules/
 server-app/data/*.json
 server-app/data/*.tmp
 .env
+server-app/.vscode/settings.json

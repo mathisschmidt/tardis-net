@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import BASE_DIR, settings
+from ..core.config import BASE_DIR, settings
 from .routers import api, pages
 
 app = FastAPI(

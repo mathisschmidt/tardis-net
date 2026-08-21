@@ -8,12 +8,12 @@ import time
 from fastapi import APIRouter, Depends, Form, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ..auth import AuthError, AuthService
-from ..config import settings
 from ..dependencies import current_session, get_auth, get_machine, get_store
-from ..machine import MachineController, MachineError
-from ..storage import StateStore
 from ..templating import templates
+from ...core.auth import AuthError, AuthService
+from ...core.config import settings
+from ...core.machine import MachineController, MachineError
+from ...core.storage import StateStore
 from .api import clear_session_cookie, set_session_cookie
 
 router = APIRouter(tags=["pages"])
@@ -35,6 +35,7 @@ def index(
             "machine": machine.state(),
             "preferences": store.get("preferences"),
             "account": settings.account_name,
+            "pairing_key": machine.pairing_key,
         },
     )
 

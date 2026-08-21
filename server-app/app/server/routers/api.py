@@ -10,17 +10,18 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from ..auth import AuthError, AuthService
-from ..config import settings
 from ..dependencies import (
     current_session,
     get_auth,
     get_machine,
     get_store,
+    require_pairing_key,
     require_session,
 )
-from ..machine import MachineController, MachineError
-from ..schemas import (
+from ...core.auth import AuthError, AuthService
+from ...core.config import settings
+from ...core.machine import MachineController, MachineError
+from ...core.schemas import (
     AuthStatusOut,
     CodeIn,
     MachineOut,
@@ -29,7 +30,7 @@ from ..schemas import (
     PreferencesOut,
     StateOut,
 )
-from ..storage import StateStore
+from ...core.storage import StateStore
 
 router = APIRouter(prefix="/api", tags=["api"])
 
@@ -139,6 +140,22 @@ def set_power(
     except MachineError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return MachineOut(**state)
+
+
+# -------------------------------------------------------------------- hardware
+
+
+@router.post(
+    "/hardware/poll",
+    response_model=MachineOut,
+    summary="Hardware heartbeat — authenticated with the pairing key, not a session",
+)
+def hardware_poll(
+    _: None = Depends(require_pairing_key),
+    machine: MachineController = Depends(get_machine),
+) -> MachineOut:
+    machine.record_hardware_poll()
+    return MachineOut(**machine.state())
 
 
 # ---------------------------------------------------------------- preferences

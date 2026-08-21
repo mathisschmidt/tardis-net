@@ -1,17 +1,16 @@
-"""Shared singletons and FastAPI dependencies."""
+"""FastAPI dependency wiring around the shared runtime singletons."""
 
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, Request, status
+import secrets
 
-from .auth import AuthService
-from .config import settings
-from .machine import MachineController
-from .storage import StateStore
+from fastapi import Depends, Header, HTTPException, Request, status
 
-store = StateStore(settings.state_file)
-auth_service = AuthService(store, settings)
-machine = MachineController(store, settings)
+from ..core.auth import AuthService
+from ..core.config import settings
+from ..core.machine import MachineController
+from ..core.runtime import auth_service, machine, store
+from ..core.storage import StateStore
 
 
 def get_store() -> StateStore:
@@ -37,3 +36,14 @@ def require_session(session: dict | None = Depends(current_session)) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required."
         )
     return session
+
+
+def require_pairing_key(
+    x_tardis_key: str | None = Header(default=None, alias="X-Tardis-Key"),
+    machine: MachineController = Depends(get_machine),
+) -> None:
+    """Guard for hardware endpoints — the pairing key stands in for a session."""
+    if not x_tardis_key or not secrets.compare_digest(x_tardis_key, machine.pairing_key):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid pairing key."
+        )

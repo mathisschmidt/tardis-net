@@ -41,6 +41,7 @@ class MachineOut(BaseModel):
     label: str
     description: str
     is_on: bool
+    linked: bool
     transitioning: bool
     progress: int
     eta_seconds: int

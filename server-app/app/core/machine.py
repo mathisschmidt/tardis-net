@@ -8,6 +8,8 @@ to real hardware — the rest of the app only ever reads the state below.
 
 from __future__ import annotations
 
+import secrets
+import string
 import time
 from typing import Any, Literal
 
@@ -16,6 +18,13 @@ from .storage import StateStore
 
 Status = Literal["offline", "booting", "online", "shutting_down"]
 TRANSIENT: dict[str, Status] = {"booting": "online", "shutting_down": "offline"}
+
+PAIRING_KEY_LENGTH = 16
+_PAIRING_KEY_ALPHABET = string.ascii_letters + string.digits
+
+# How long a hardware poll stays valid before we no longer trust the cached
+# power state. Matches the ack timeout described in the README's hardware flow.
+LINK_TIMEOUT_SECONDS = 60
 
 LABELS: dict[str, str] = {
     "offline": "Offline",
@@ -39,6 +48,36 @@ class MachineController:
     def __init__(self, store: StateStore, settings: Settings) -> None:
         self._store = store
         self._settings = settings
+
+    # --------------------------------------------------------------- pairing
+
+    @property
+    def pairing_key(self) -> str:
+        """Key the hardware side authenticates its status polls/acks with.
+
+        Generated once on first access and persisted, the same lazy pattern
+        ``AuthService`` uses for the cookie-signing secret.
+        """
+        stored = self._store.raw("pairing_key")
+        if not stored:
+            stored = "".join(secrets.choice(_PAIRING_KEY_ALPHABET) for _ in range(PAIRING_KEY_LENGTH))
+            self._store.set("pairing_key", stored)
+        return stored
+
+    @property
+    def linked(self) -> bool:
+        """Whether the hardware has polled within the last ``LINK_TIMEOUT_SECONDS``.
+
+        Without a recent poll, any cached power state is unverified — the
+        console should say so instead of asserting online/offline.
+        """
+        last_seen = self._store.get("hardware").get("last_seen")
+        if last_seen is None:
+            return False
+        return (time.time() - float(last_seen)) < LINK_TIMEOUT_SECONDS
+
+    def record_hardware_poll(self) -> None:
+        self._store.update("hardware", {"last_seen": time.time()})
 
     # ------------------------------------------------------------------ read
 
@@ -82,6 +121,7 @@ class MachineController:
             "label": LABELS.get(status, status.title()),
             "description": DESCRIPTIONS.get(status, ""),
             "is_on": status == "online",
+            "linked": self.linked,
             "transitioning": transitioning,
             "progress": progress,
             "eta_seconds": remaining,

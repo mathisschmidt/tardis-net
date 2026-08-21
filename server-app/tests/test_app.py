@@ -16,14 +16,18 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("TARDIS_TRANSITION_SECONDS", "1")
 
     # The modules read settings at import time, so reload them per test.
-    from app import config, dependencies, machine, storage, templating
-    from app.routers import api, pages
+    from app.core import config, machine, runtime, storage
+    from app.server import dependencies, templating
+    from app.server.routers import api, pages
 
-    for module in (config, storage, machine, templating, dependencies, api, pages):
+    for module in (config, storage, machine):
         importlib.reload(module)
-    main = importlib.reload(importlib.import_module("app.main"))
+    importlib.reload(runtime)
+    for module in (templating, dependencies, api, pages):
+        importlib.reload(module)
+    server_app = importlib.reload(importlib.import_module("app.server.app"))
 
-    with TestClient(main.app) as test_client:
+    with TestClient(server_app.app) as test_client:
         test_client.deps = dependencies  # type: ignore[attr-defined]
         yield test_client
 
@@ -34,7 +38,7 @@ def code_for(secret: str, at: float | None = None) -> str:
 
 def shift_clock(monkeypatch, seconds: int) -> float:
     """Move the server's clock forward so a later TOTP step is the current one."""
-    from app import auth as auth_module
+    from app.core import auth as auth_module
 
     target = time.time() + seconds
     monkeypatch.setattr(auth_module, "_now", lambda: int(target))

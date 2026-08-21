@@ -14,6 +14,7 @@
     label: "Offline",
     description: "",
     is_on: false,
+    linked: false,
     transitioning: false,
     progress: 0,
     eta_seconds: 0,
@@ -100,7 +101,14 @@
         this.pendingConfirm = null;
       },
 
+      // Without a recent hardware poll, the cached power state is unverified —
+      // the pill says so instead of asserting online/offline.
+      pillLabel() {
+        return this.machine.linked ? this.machine.label : "Not linked";
+      },
+
       get pillClass() {
+        if (!this.machine.linked) return "status-pill-offline";
         return {
           online: "status-pill-online",
           offline: "status-pill-offline",
@@ -110,6 +118,7 @@
       },
 
       get dotClass() {
+        if (!this.machine.linked) return "bg-slate-500";
         return {
           online: "bg-emerald-400",
           offline: "bg-slate-500",
@@ -121,10 +130,6 @@
       sinceLabel() {
         return this.machine.is_on ? `Online for ${formatDuration(this.machine.since_seconds)}` :
           `Idle for ${formatDuration(this.machine.since_seconds)}`;
-      },
-
-      elapsedLabel() {
-        return this.machine.changed_at ? formatDuration(this.machine.since_seconds) : "—";
       },
     });
 
