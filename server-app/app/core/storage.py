@@ -17,7 +17,16 @@ DEFAULT_STATE: dict[str, Any] = {
     "version": 1,
     "secret_key": None,
     "pairing_key": None,  # hardware auth key for the poll/ack handshake, see machine.py
-    "hardware": {"last_seen": None},  # last authenticated poll from the hardware side
+    # Everything the hardware side reports about itself on its authenticated polls.
+    "hardware": {
+        "last_seen": None,
+        "firmware": None,
+        "ip": None,
+        "rssi": None,
+        "uptime_s": None,
+        "commands_ok": 0,
+        "commands_failed": 0,
+    },
     "user": None,  # {"totp_secret", "created_at", "last_login", "last_counter"}
     # Secret offered on the enrolment screen, kept until the code confirms it.
     "pending_secret": None,
@@ -29,6 +38,10 @@ DEFAULT_STATE: dict[str, Any] = {
         "target": None,
         "last_action": None,
         "boot_count": 0,
+        # Command the hardware has yet to pulse and acknowledge, see machine.py.
+        "pending": None,
+        # Last failure worth showing the operator: {"message", "at"}.
+        "last_error": None,
     },
     "preferences": {
         "confirm_before_power_off": True,

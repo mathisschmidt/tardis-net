@@ -5,7 +5,7 @@
 {# Single-quoted attribute: the JSON payload below is full of double quotes. #}
 <div
   x-data
-  x-init='$store.tardis.hydrate({{ {"machine": machine, "preferences": preferences} | tojson }})'
+  x-init='$store.tardis.hydrate({{ {"machine": machine, "hardware": hardware, "preferences": preferences} | tojson }})'
 >
   <header class="mx-auto flex w-full max-w-5xl items-center justify-between px-5 pt-7">
     <div class="flex items-center gap-3">
@@ -106,18 +106,102 @@
           <div class="equalizer mt-6" x-show="$store.tardis.machine.is_on" x-cloak aria-hidden="true">
             <span></span><span></span><span></span><span></span><span></span>
           </div>
+
+          <!-- The 5 s hold: same switch, long press, no OS involved. Always
+               confirmed, whatever the preference says. -->
+          <div class="action-row" x-show="$store.tardis.machine.can_hard_power_off" x-cloak>
+            <button
+              type="button"
+              class="btn-outline-danger"
+              data-confirm-power="hard"
+              hx-post="/partials/power"
+              hx-vals='{"action": "hard_power_off"}'
+              hx-swap="none"
+            >
+              <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor"
+                   stroke-width="1.7" stroke-linecap="round">
+                <path d="M12 3.5v8" />
+                <path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
+              </svg>
+              Hold 5 s — hard power off
+            </button>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- Pairing key ------------------------------------------------------- -->
-    <section class="glass-card mt-6 p-5">
-      <p class="stat-label">Pairing key</p>
-      <p class="mt-1 break-all font-mono text-lg tracking-wide text-slate-100">{{ pairing_key }}</p>
-      <p class="mt-2 text-xs text-slate-500">
-        Enter this on {{ machine.name }} so it can authenticate its status polls and acks. Keep it
+    <!-- Hardware link ----------------------------------------------------- -->
+    <section class="glass-card mt-6 p-6" x-data="{ copied: false }">
+      <div class="mb-5 flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-medium text-slate-200">Hardware link</h2>
+          <p class="text-xs text-slate-500">
+            The device that actually presses {{ machine.name }}'s power switch.
+          </p>
+        </div>
+        <span class="status-pill" :class="$store.tardis.hardware.linked
+          ? 'status-pill-online' : 'status-pill-offline'">
+          <span class="relative inline-flex size-2 rounded-full"
+                :class="$store.tardis.hardware.linked ? 'bg-emerald-400' : 'bg-slate-500'"></span>
+          <span x-text="$store.tardis.hardware.linked ? 'Polling' : 'Silent'">Silent</span>
+        </span>
+      </div>
+
+      <dl class="hw-grid">
+        <div class="hw-row">
+          <dt class="hw-label">Last poll</dt>
+          <dd class="hw-value" x-text="$store.tardis.lastPollLabel()">never</dd>
+        </div>
+        <div class="hw-row">
+          <dt class="hw-label">Firmware</dt>
+          <dd class="hw-value" x-text="$store.tardis.hardware.firmware || '—'">—</dd>
+        </div>
+        <div class="hw-row">
+          <dt class="hw-label">Address</dt>
+          <dd class="hw-value" x-text="$store.tardis.hardware.ip || '—'">—</dd>
+        </div>
+        <div class="hw-row">
+          <dt class="hw-label">Signal</dt>
+          <dd class="hw-value"
+              x-text="$store.tardis.hardware.rssi === null ? '—' : $store.tardis.hardware.rssi + ' dBm'">—</dd>
+        </div>
+        <div class="hw-row">
+          <dt class="hw-label">Pulses delivered</dt>
+          <dd class="hw-value">
+            <span x-text="$store.tardis.hardware.commands_ok">0</span>
+            <span class="hw-muted"> ok · </span>
+            <span x-text="$store.tardis.hardware.commands_failed">0</span>
+            <span class="hw-muted"> failed</span>
+          </dd>
+        </div>
+        <div class="hw-row">
+          <dt class="hw-label">Poll cadence</dt>
+          <dd class="hw-value">
+            every <span x-text="$store.tardis.hardware.poll_interval">5</span>s
+          </dd>
+        </div>
+      </dl>
+
+      <p class="mt-5 stat-label">Pairing key</p>
+      <button type="button" class="secret-key mt-2" @click="
+        navigator.clipboard?.writeText('{{ pairing_key }}').then(() => {
+          copied = true; setTimeout(() => copied = false, 2000);
+        }).catch(() => {})">
+        <span class="font-mono text-sm tracking-wide text-cyan-200 hw-key">{{ pairing_key }}</span>
+        <span class="hw-muted" x-text="copied ? 'copied' : 'copy'">copy</span>
+      </button>
+      <p class="mt-3 text-xs text-slate-500">
+        Enter this in the device's config portal so it can authenticate its polls and acks. Keep it
         private — anyone with this key can impersonate the hardware.
       </p>
+
+      <table class="pulse-table mt-5">
+        <tbody>
+          <tr><td>Power on</td><td>500 ms pulse</td></tr>
+          <tr><td>Graceful shutdown</td><td>500 ms pulse</td></tr>
+          <tr><td>Hard power off</td><td>5 s hold</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <!-- Preferences ----------------------------------------------------- -->
@@ -184,15 +268,21 @@
     @keydown.escape.window="$store.tardis.cancelPower()"
   >
     <div class="glass-card w-full max-w-sm p-6" @click.outside="$store.tardis.cancelPower()">
-      <h3 class="text-base font-medium text-slate-100">Power off {{ machine.name }}?</h3>
-      <p class="mt-2 text-sm text-slate-400">
-        Anything still running on the machine will be interrupted.
+      <h3 class="text-base font-medium text-slate-100"
+          x-text="$store.tardis.confirmKind === 'hard'
+            ? 'Cut power to {{ machine.name }}?'
+            : 'Shut down {{ machine.name }}?'">Shut down {{ machine.name }}?</h3>
+      <p class="mt-2 text-sm text-slate-400"
+         x-text="$store.tardis.confirmKind === 'hard'
+           ? 'The switch is held for 5 seconds — the machine loses power immediately, with no chance to flush anything to disk.'
+           : 'The switch is pulsed for 500 ms, asking the operating system to shut down cleanly.'">
       </p>
       <div class="mt-6 flex gap-3">
         <button type="button" class="btn-ghost flex-1 justify-center"
                 @click="$store.tardis.cancelPower()">Cancel</button>
         <button type="button" class="btn-danger flex-1"
-                @click="$store.tardis.confirmPower()">Power off</button>
+                @click="$store.tardis.confirmPower()"
+                x-text="$store.tardis.confirmKind === 'hard' ? 'Cut power' : 'Shut down'">Shut down</button>
       </div>
     </div>
   </div>

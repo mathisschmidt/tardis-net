@@ -8,12 +8,12 @@ import time
 from fastapi import APIRouter, Depends, Form, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ..dependencies import current_session, get_auth, get_machine, get_store
-from ..templating import templates
 from ...core.auth import AuthError, AuthService
 from ...core.config import settings
-from ...core.machine import MachineController, MachineError
+from ...core.machine import ACTION_LABELS, MachineController, MachineError
 from ...core.storage import StateStore
+from ..dependencies import current_session, get_auth, get_machine, get_store
+from ..templating import templates
 from .api import clear_session_cookie, set_session_cookie
 
 router = APIRouter(tags=["pages"])
@@ -33,6 +33,7 @@ def index(
         "dashboard.html",
         {
             "machine": machine.state(),
+            "hardware": machine.hardware(),
             "preferences": store.get("preferences"),
             "account": settings.account_name,
             "pairing_key": machine.pairing_key,
@@ -126,16 +127,13 @@ def power(
     if session is None:
         return _hx_redirect("/login")
     error: str | None = None
+    toast: str | None = None
     try:
-        if action == "on":
-            machine.power_on()
-        elif action == "off":
-            machine.power_off()
-        else:
-            machine.toggle()
+        state = machine.toggle() if action == "toggle" else machine.request(action)
+        toast = f"{ACTION_LABELS[state['pending_action']]} queued for the hardware"
     except MachineError as exc:
         error = str(exc)
-    return _state_event(machine, store, error=error)
+    return _state_event(machine, store, error=error, toast=toast)
 
 
 @router.post("/partials/preferences")
@@ -188,6 +186,7 @@ def _state_event(
     """Empty body + an ``HX-Trigger`` event carrying the current state."""
     payload = {
         "machine": machine.state(),
+        "hardware": machine.hardware(),
         "preferences": store.get("preferences"),
         "server_time": time.time(),
         "error": error,

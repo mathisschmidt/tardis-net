@@ -16,23 +16,45 @@
     is_on: false,
     linked: false,
     transitioning: false,
+    awaiting_ack: false,
+    pending_action: null,
     progress: 0,
     eta_seconds: 0,
     changed_at: null,
     since_seconds: 0,
+    last_error: null,
     boot_count: 0,
+    can_power_on: true,
+    can_power_off: false,
+    can_hard_power_off: false,
+  };
+
+  const EMPTY_HARDWARE = {
+    linked: false,
+    last_seen: null,
+    since_seconds: null,
+    firmware: null,
+    ip: null,
+    rssi: null,
+    commands_ok: 0,
+    commands_failed: 0,
+    poll_interval: 5,
+    link_timeout: 30,
   };
 
   document.addEventListener("alpine:init", () => {
     Alpine.store("tardis", {
       machine: { ...EMPTY_MACHINE },
+      hardware: { ...EMPTY_HARDWARE },
       prefs: { confirm_before_power_off: true, animations: true, poll_interval: 3 },
       toast: "",
       toastTone: "info",
       pendingConfirm: null,
+      confirmKind: "graceful",
       _toastTimer: null,
       _pollTimer: null,
       _tick: null,
+      _lastErrorAt: null,
 
       /** Seed from the server-rendered page, then start polling. */
       hydrate(payload) {
@@ -54,7 +76,11 @@
 
       apply(payload) {
         if (!payload) return;
-        if (payload.machine) this.machine = payload.machine;
+        if (payload.machine) {
+          this.machine = payload.machine;
+          this.reportMachineError(payload.machine.last_error);
+        }
+        if (payload.hardware) this.hardware = payload.hardware;
         if (payload.preferences) {
           const next = payload.preferences;
           const intervalChanged = next.poll_interval !== this.prefs.poll_interval;
@@ -63,6 +89,14 @@
         }
         if (payload.error) this.notify(payload.error, "error");
         else if (payload.toast) this.notify(payload.toast, "info");
+      },
+
+      /** Surface a server-side failure once, not on every poll that repeats it. */
+      reportMachineError(error) {
+        if (!error || !error.at) return;
+        if (this._lastErrorAt === error.at) return;
+        this._lastErrorAt = error.at;
+        this.notify(error.message, "error");
       },
 
       notify(message, tone) {
@@ -83,12 +117,21 @@
       },
 
       nextAction() {
-        return this.machine.is_on ? "off" : "on";
+        return this.machine.is_on ? "graceful_shutdown" : "power_on";
       },
 
       actionLabel() {
         if (this.machine.transitioning) return this.machine.label;
-        return this.machine.is_on ? `Power off ${this.machine.name}` : `Power on ${this.machine.name}`;
+        return this.machine.is_on
+          ? `Shut down ${this.machine.name}`
+          : `Power on ${this.machine.name}`;
+      },
+
+      lastPollLabel() {
+        if (this.hardware.since_seconds === null || this.hardware.since_seconds === undefined) {
+          return "never";
+        }
+        return `${formatDuration(this.hardware.since_seconds)} ago`;
       },
 
       confirmPower() {
@@ -250,8 +293,15 @@
       const element = event.detail.elt;
       if (!element || !element.hasAttribute("data-confirm-power")) return;
       const store = window.Alpine && Alpine.store("tardis");
-      if (!store || !store.prefs.confirm_before_power_off || !store.machine.is_on) return;
+      if (!store) return;
+      const kind = element.getAttribute("data-confirm-power") === "hard" ? "hard" : "graceful";
+      // Cutting power for 5 s always asks; the graceful pulse only when the
+      // operator left that preference on.
+      if (kind !== "hard" && (!store.prefs.confirm_before_power_off || !store.machine.is_on)) {
+        return;
+      }
       event.preventDefault();
+      store.confirmKind = kind;
       store.pendingConfirm = event.detail;
     });
 

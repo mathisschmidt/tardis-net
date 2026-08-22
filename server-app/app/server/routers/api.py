@@ -10,6 +10,24 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from ...core.auth import AuthError, AuthService
+from ...core.config import settings
+from ...core.machine import MachineController, MachineError
+from ...core.schemas import (
+    AuthStatusOut,
+    CodeIn,
+    HardwareAckIn,
+    HardwareAckOut,
+    HardwareOut,
+    HardwarePollIn,
+    HardwarePollOut,
+    MachineOut,
+    PowerIn,
+    PreferencesIn,
+    PreferencesOut,
+    StateOut,
+)
+from ...core.storage import StateStore
 from ..dependencies import (
     current_session,
     get_auth,
@@ -18,19 +36,6 @@ from ..dependencies import (
     require_pairing_key,
     require_session,
 )
-from ...core.auth import AuthError, AuthService
-from ...core.config import settings
-from ...core.machine import MachineController, MachineError
-from ...core.schemas import (
-    AuthStatusOut,
-    CodeIn,
-    MachineOut,
-    PowerIn,
-    PreferencesIn,
-    PreferencesOut,
-    StateOut,
-)
-from ...core.storage import StateStore
 
 router = APIRouter(prefix="/api", tags=["api"])
 
@@ -112,6 +117,7 @@ def read_state(
 ) -> StateOut:
     return StateOut(
         machine=MachineOut(**machine.state()),
+        hardware=HardwareOut(**machine.hardware()),
         preferences=PreferencesOut(**store.get("preferences")),
         server_time=time.time(),
     )
@@ -124,19 +130,18 @@ def read_machine(
     return MachineOut(**machine.state())
 
 
-@router.post("/machine/power", response_model=MachineOut)
+@router.post(
+    "/machine/power",
+    response_model=MachineOut,
+    summary="Queue a power command for the hardware to pulse",
+)
 def set_power(
     payload: PowerIn,
     _: dict = Depends(require_session),
     machine: MachineController = Depends(get_machine),
 ) -> MachineOut:
     try:
-        if payload.action == "on":
-            state = machine.power_on()
-        elif payload.action == "off":
-            state = machine.power_off()
-        else:
-            state = machine.toggle()
+        state = machine.toggle() if payload.action == "toggle" else machine.request(payload.action)
     except MachineError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return MachineOut(**state)
@@ -145,17 +150,58 @@ def set_power(
 # -------------------------------------------------------------------- hardware
 
 
+@router.get("/hardware", response_model=HardwareOut, summary="Device link status")
+def read_hardware(
+    _: dict = Depends(require_session), machine: MachineController = Depends(get_machine)
+) -> HardwareOut:
+    return HardwareOut(**machine.hardware())
+
+
 @router.post(
     "/hardware/poll",
-    response_model=MachineOut,
+    response_model=HardwarePollOut,
     summary="Hardware heartbeat — authenticated with the pairing key, not a session",
 )
 def hardware_poll(
+    payload: HardwarePollIn | None = None,
     _: None = Depends(require_pairing_key),
     machine: MachineController = Depends(get_machine),
-) -> MachineOut:
+) -> HardwarePollOut:
+    report = payload or HardwarePollIn()
+    machine.record_hardware_poll(
+        firmware=report.firmware,
+        ip=report.ip,
+        rssi=report.rssi,
+        uptime_s=report.uptime_s,
+        power_sense=report.power_sense,
+    )
+    command = machine.next_command()
+    return HardwarePollOut(
+        server_time=time.time(),
+        poll_interval=settings.hardware_poll_seconds,
+        machine=MachineOut(**machine.state()),
+        command=command,
+    )
+
+
+@router.post(
+    "/hardware/ack",
+    response_model=HardwareAckOut,
+    summary="Hardware confirms it pulsed the switch — pairing key, not a session",
+)
+def hardware_ack(
+    payload: HardwareAckIn,
+    _: None = Depends(require_pairing_key),
+    machine: MachineController = Depends(get_machine),
+) -> HardwareAckOut:
     machine.record_hardware_poll()
-    return MachineOut(**machine.state())
+    try:
+        state = machine.acknowledge(payload.id, status=payload.status, detail=payload.detail)
+    except MachineError as exc:
+        # The command already expired or was settled — the device should drop it
+        # rather than retry, so this is a 409 and not a 500.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return HardwareAckOut(accepted=True, machine=MachineOut(**state))
 
 
 # ---------------------------------------------------------------- preferences

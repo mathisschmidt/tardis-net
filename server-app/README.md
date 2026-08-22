@@ -38,7 +38,9 @@ for the full list and defaults. The ones worth setting in production:
 | `TARDIS_COOKIE_SECURE` | Set to `true` once the console is served over HTTPS. |
 | `TARDIS_MACHINE` | Name of the machine shown throughout the UI. |
 | `TARDIS_STATE_FILE` | Where the JSON state document lives. |
-| `TARDIS_TRANSITION_SECONDS` | Length of the simulated boot / shutdown sequence. |
+| `TARDIS_ACK_TIMEOUT_SECONDS` | How long the hardware has to pulse the switch and acknowledge (default 60). |
+| `TARDIS_HARDWARE_POLL_SECONDS` | Cadence served to the device on every poll (default 5). |
+| `TARDIS_LINK_TIMEOUT_SECONDS` | Older than this and the console stops trusting the cached power state (default 30). |
 
 ## API
 
@@ -51,16 +53,25 @@ for the full list and defaults. The ones worth setting in production:
 | `POST` | `/api/auth/logout` | Clears the session cookie. |
 | `GET` | `/api/state` | Machine state + preferences in one call. |
 | `GET` | `/api/machine` | Machine state only. |
-| `POST` | `/api/machine/power` | `{"action": "on" \| "off" \| "toggle"}`. |
+| `POST` | `/api/machine/power` | `{"action": "on" \| "off" \| "hard_off" \| "toggle"}` — queues a command for the hardware. |
+| `GET` | `/api/hardware` | Device link status for the dashboard. |
 | `GET`/`PUT` | `/api/preferences` | Persisted UI preferences. |
 
 Everything except `/api/health` and the auth endpoints requires the session
-cookie. `409` means the machine is mid-transition; `429` means the code form is
-locked out after too many failures.
+cookie — including `/api/docs` and the OpenAPI schema. `409` means the machine
+is mid-transition; `429` means the code form is locked out after too many
+failures.
 
-`POST /api/hardware/poll` is separate: it's the hardware side's heartbeat, so
-it authenticates with `X-Tardis-Key: <pairing key>` instead of the session
-cookie. See [Wiring it to real hardware](#wiring-it-to-real-hardware).
+The two hardware endpoints are separate. They authenticate with
+`X-Tardis-Key: <pairing key>` and **only** that — an operator's session cookie
+does not open them, and the pairing key does not open anything else:
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `POST` | `/api/hardware/poll` | Heartbeat + "what should I do?"; returns the pending command. |
+| `POST` | `/api/hardware/ack` | "I pulsed the switch" — the only thing that settles a transition. |
+
+See [Wiring it to real hardware](#wiring-it-to-real-hardware).
 
 ## Security notes
 
@@ -87,52 +98,43 @@ tardis reset-pairing      # forget the user, show a fresh QR next visit
 
 ## Wiring it to real hardware
 
-Power commands are currently simulated: `on` parks the machine in `booting`
-for `TARDIS_TRANSITION_SECONDS` before it settles on `online` on a timer, with
-no real hardware involved. The target design replaces that timer with a
-pairing key and an acknowledgement handshake, so the console only reports
-`online`/`offline` once the physical machine has actually confirmed it:
+Power commands are not simulated: the console holds a command until the device
+in [`hardware-app`](../hardware-app) picks it up, pulses `tardis`'s front-panel
+switch, and says so.
 
-1. **Pairing key.** The first time it's needed, the server generates a random
-   16-character key (`MachineController.pairing_key` in
-   [`app/core/machine.py`](app/core/machine.py)) and persists it in
-   `data/state.json` next to the TOTP secret and cookie signing key. It's
-   shown on the dashboard so the operator can copy it onto the hardware side
-   once, out of band, when the device is set up — the server never sends it
-   anywhere after that.
-2. **Operator presses the power button.** The console records the requested
-   action (`on`/`off`) as *pending* and starts a 60-second ack timer. At this
-   point the machine's status is a waiting state — not yet `online`/`offline`
-   — the console shows it as still transitioning.
-3. **Hardware polls for status.** The device on the `tardis` machine calls
-   `POST /api/hardware/poll`, authenticating with `X-Tardis-Key: <pairing
-   key>` instead of the operator's session cookie. Each poll records the
-   server's `last_seen` time for the hardware — the console considers it
-   *linked* only while a poll has landed in the last 60 seconds, and shows
-   "Not linked" instead of a possibly-stale online/offline state otherwise.
-   Once the poll also carries the pending change, the device performs the
-   real action (Wake-on-LAN packet, SSH `shutdown`, smart-plug toggle, …).
-4. **Hardware acknowledges.** After acting, the device calls back into the
-   server — again authenticated with the pairing key — to ack that specific
-   change. Only this ack, from a caller that knows the key, is trusted to
-   confirm the machine actually changed state.
-5. **Server resolves the transition.** Once the ack for the pending change
-   arrives, the server flips the machine to `online` (or `offline`) and the
-   console reflects it.
-6. **Timeout.** If no ack arrives within 60 seconds of the request, the
-   server cancels the pending change, reverts the machine to its last known
-   state, and the console surfaces an error instead of quietly sitting in
-   `booting`/`shutting_down` forever.
+1. **Pairing key.** The server generates a random 16-character key on first use
+   (`MachineController.pairing_key`) and persists it in `data/state.json`. It is
+   shown on the dashboard so it can be copied into the device's config portal
+   once, out of band.
+2. **Operator presses the power button.** The console records the action as
+   *pending* — `power_on`, `graceful_shutdown` or `hard_power_off` — and shows
+   the machine as transitioning. It does **not** claim the machine is on.
+3. **Hardware polls.** `POST /api/hardware/poll` returns the pending command
+   with the hold time the device should use:
 
-So far, steps 1 and 3 are implemented as a heartbeat: the pairing key
-(generation, persistence, dashboard display) and `POST /api/hardware/poll`
-(records `last_seen`, drives the `linked` flag on `MachineOut` and the
-"Not linked" state of the console's status pill). `MachineController._dispatch`
-is still the timer-based stub, and nothing yet carries a pending change
-through the poll or listens for an ack — building the rest means adding
-that payload to the poll response, an ack endpoint, and replacing the
-elapsed-time check in `MachineController.state()` with a
-pending/ack/timeout state machine.
+   | Action | Pulse |
+   | --- | --- |
+   | `power_on` | 500 ms |
+   | `graceful_shutdown` | 500 ms |
+   | `hard_power_off` | 5 s |
+
+   The same command is repeated on every poll until it is acked, so a dropped
+   response costs one cycle and nothing more.
+4. **Hardware acknowledges.** `POST /api/hardware/ack` with the command id. Only
+   this — from a caller that knows the key — moves the machine to `online` or
+   `offline`.
+5. **Timeout.** No ack within `TARDIS_ACK_TIMEOUT_SECONDS` and the command
+   expires: the machine reverts to its previous state and the console shows what
+   failed.
+6. **Power sense (optional).** A device wired to a power-sense line can report
+   `power_sense` on each poll. That is ground truth and wins over anything
+   inferred from a command — so the console stays right even when someone presses
+   the physical button.
+
+Each poll also records `last_seen`; without one inside
+`TARDIS_LINK_TIMEOUT_SECONDS` the console shows **Not linked** rather than a
+stale online/offline. Commands are still accepted while unlinked — they simply
+expire if the device never comes back.
 
 ## Layout
 
@@ -151,7 +153,7 @@ each process uses), and never on each other.
 
 ```bash
 pip install -e ".[dev]"
-pytest                   # 19 tests covering enrolment, login, API and fragments
+pytest                   # 34 tests: enrolment, login, API, fragments, hardware protocol
 ```
 
 `app/static/css/app.css` is committed and hand-maintained — there is no build

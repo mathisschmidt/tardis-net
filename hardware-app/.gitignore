@@ -1,0 +1,6 @@
+# PlatformIO build output
+.pio/
+.build/
+
+# Generated from web/portal.html at build time
+include/web_assets.h

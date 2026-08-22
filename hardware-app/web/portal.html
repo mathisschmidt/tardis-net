@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>tardis-net · device setup</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:#04070f;color:#cbd5e1;
+  font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(120% 80% at 50% -10%,rgba(31,111,235,.18),transparent 60%)}
+.bg{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.bg span{position:absolute;border-radius:9999px;filter:blur(90px);opacity:.45}
+.bg span:nth-child(1){inset:-10rem auto auto -6rem;width:28rem;height:28rem;
+  background:radial-gradient(circle,rgba(31,111,235,.55),transparent 65%)}
+.bg span:nth-child(2){inset:auto -8rem -12rem auto;width:26rem;height:26rem;
+  background:radial-gradient(circle,rgba(129,60,235,.35),transparent 65%)}
+main{max-width:640px;margin:0 auto;padding:2.5rem 1.25rem 4rem}
+header{display:flex;align-items:center;gap:.75rem;margin-bottom:2rem}
+.mark{display:grid;place-items:center;width:2.5rem;height:2.5rem;border-radius:.85rem;
+  border:1px solid rgba(34,211,238,.2);background:rgba(8,13,26,.7);
+  box-shadow:0 0 0 1px rgba(56,189,248,.06),0 24px 60px -24px rgba(8,145,178,.45)}
+.mark svg{width:1.25rem;height:1.25rem;stroke:#67e8f9;fill:none;stroke-width:1.5}
+h1{font-size:1rem;font-weight:600;color:#f1f5f9;margin:0;letter-spacing:-.01em}
+.sub{font-size:.78rem;color:#64748b;margin:.1rem 0 0}
+.card{border-radius:1.25rem;border:1px solid rgba(148,163,184,.12);
+  background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,.01)),rgba(8,13,26,.72);
+  box-shadow:0 30px 80px -40px rgba(2,6,23,.9);padding:1.5rem;margin-bottom:1.25rem}
+.card h2{font-size:.9rem;font-weight:600;color:#e2e8f0;margin:0 0 .25rem}
+.card p.hint{font-size:.78rem;color:#64748b;margin:0 0 1.25rem}
+label{display:block;font-size:.73rem;text-transform:uppercase;letter-spacing:.18em;
+  color:#64748b;margin:0 0 .4rem}
+input[type=text],input[type=password],input[type=number],select{width:100%;
+  border-radius:.75rem;border:1px solid rgba(148,163,184,.18);background:rgba(4,7,15,.6);
+  color:#e2e8f0;padding:.65rem .8rem;font-size:.9rem;font-family:inherit;
+  transition:border-color .2s,box-shadow .2s}
+input:focus,select:focus{outline:none;border-color:rgba(34,211,238,.6);
+  box-shadow:0 0 0 4px rgba(34,211,238,.12)}
+input::placeholder{color:#475569}
+.field{margin-bottom:1rem}
+.row{display:flex;gap:1rem;flex-wrap:wrap}
+.row>.field{flex:1 1 12rem}
+.row.tight>.field{flex:1 1 7rem}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+button{font:inherit;cursor:pointer;border-radius:.8rem;padding:.7rem 1.1rem;font-size:.88rem;
+  font-weight:600;border:1px solid transparent;transition:filter .2s,background .2s,border-color .2s}
+button:disabled{opacity:.5;cursor:not-allowed}
+.primary{width:100%;color:#f8fbff;border-color:rgba(59,139,255,.4);
+  background:linear-gradient(180deg,#3b8bff,#1f6feb);box-shadow:0 14px 30px -16px rgba(31,111,235,.9)}
+.primary:hover:not(:disabled){filter:brightness(1.08)}
+.ghost{background:rgba(255,255,255,.03);border-color:rgba(148,163,184,.15);color:#cbd5e1;
+  font-weight:500;font-size:.82rem;padding:.55rem .85rem}
+.ghost:hover:not(:disabled){border-color:rgba(34,211,238,.35);color:#a5f3fc;background:rgba(34,211,238,.07)}
+.danger{background:rgba(244,63,94,.08);border-color:rgba(244,63,94,.3);color:#fda4af;
+  font-weight:500;font-size:.82rem;padding:.55rem .85rem}
+.danger:hover:not(:disabled){background:rgba(244,63,94,.16)}
+.actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1.25rem}
+.pill{display:inline-flex;align-items:center;gap:.5rem;border-radius:9999px;
+  border:1px solid transparent;padding:.35rem .8rem;font-size:.74rem;font-weight:500}
+.pill i{width:.5rem;height:.5rem;border-radius:9999px;background:currentColor;display:block}
+.ok{border-color:rgba(45,212,191,.3);background:rgba(45,212,191,.08);color:#5eead4}
+.warn{border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.08);color:#fcd34d}
+.idle{border-color:rgba(148,163,184,.2);background:rgba(148,163,184,.06);color:#cbd5e1}
+dl{margin:0;display:grid;gap:0}
+.dl-row{display:flex;justify-content:space-between;gap:1rem;align-items:baseline;
+  border-bottom:1px solid rgba(148,163,184,.08);padding:.5rem 0}
+.dl-row dt{font-size:.8rem;color:#64748b}
+.dl-row dd{margin:0;font-size:.85rem;color:#e2e8f0;text-align:right;
+  font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.msg{margin-top:1rem;border-radius:.75rem;padding:.7rem .9rem;font-size:.82rem;display:none}
+.msg.show{display:block}
+.msg.err{background:rgba(244,63,94,.1);border:1px solid rgba(244,63,94,.25);color:#fecdd3}
+.msg.good{background:rgba(45,212,191,.1);border:1px solid rgba(45,212,191,.25);color:#99f6e4}
+.check{display:flex;align-items:center;gap:.6rem;font-size:.85rem;color:#cbd5e1;
+  text-transform:none;letter-spacing:normal;margin:0}
+.check input{width:auto;margin:0}
+table.pulses{width:100%;border-collapse:collapse;font-size:.78rem;margin-top:.5rem}
+table.pulses td{border-top:1px solid rgba(148,163,184,.08);padding:.4rem 0;color:#94a3b8}
+table.pulses td:last-child{text-align:right;color:#67e8f9;font-family:ui-monospace,Menlo,monospace}
+.foot{text-align:center;font-size:.72rem;color:#475569;margin-top:1.5rem}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="bg"><span></span><span></span></div>
+<main>
+  <header>
+    <div class="mark">
+      <svg viewBox="0 0 24 24"><path d="M6 8.5 12 4l6 4.5v10a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 18.5z"/><path d="M12 4v16M6 9.5h12"/></svg>
+    </div>
+    <div>
+      <h1>tardis-net · device</h1>
+      <p class="sub" id="subtitle">power switch agent</p>
+    </div>
+  </header>
+
+  <!-- Claim: first connection sets the portal password ------------------- -->
+  <section id="screen-claim" class="card hide">
+    <h2>Claim this device</h2>
+    <p class="hint">Nobody has set a password yet. Choose one now — it protects this
+      page from here on.</p>
+    <form id="form-claim">
+      <div class="field">
+        <label for="claim-password">New portal password</label>
+        <input type="password" id="claim-password" autocomplete="new-password"
+               placeholder="at least 8 characters" required>
+      </div>
+      <div class="field">
+        <label for="claim-confirm">Confirm password</label>
+        <input type="password" id="claim-confirm" autocomplete="new-password" required>
+      </div>
+      <button class="primary" type="submit">Claim device</button>
+    </form>
+    <div class="msg err" id="claim-msg"></div>
+  </section>
+
+  <!-- Login --------------------------------------------------------------- -->
+  <section id="screen-login" class="card hide">
+    <h2>Sign in</h2>
+    <p class="hint">Enter the portal password set when this device was claimed.</p>
+    <form id="form-login">
+      <div class="field">
+        <label for="login-password">Portal password</label>
+        <input type="password" id="login-password" autocomplete="current-password" required>
+      </div>
+      <button class="primary" type="submit">Unlock</button>
+    </form>
+    <div class="msg err" id="login-msg"></div>
+  </section>
+
+  <!-- Config -------------------------------------------------------------- -->
+  <div id="screen-config" class="hide">
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem">
+        <div>
+          <h2>Status</h2>
+          <p class="hint" style="margin-bottom:1rem">What this device is doing right now.</p>
+        </div>
+        <span class="pill idle" id="link-pill"><i></i><span id="link-label">…</span></span>
+      </div>
+      <dl id="status-list"></dl>
+      <table class="pulses">
+        <tbody>
+          <tr><td>Power on</td><td>500 ms pulse</td></tr>
+          <tr><td>Graceful shutdown</td><td>500 ms pulse</td></tr>
+          <tr><td>Hard power off</td><td>5 s hold</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Configuration</h2>
+      <p class="hint">Saved on the device. Leave a secret blank to keep the stored one.</p>
+      <form id="form-config">
+        <div class="row">
+          <div class="field">
+            <label for="wifi-ssid">Wi-Fi network</label>
+            <input type="text" id="wifi-ssid" autocomplete="off" maxlength="32" required>
+          </div>
+          <div class="field">
+            <label for="wifi-password">Wi-Fi password</label>
+            <input type="password" id="wifi-password" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="field">
+          <label for="server-url">Console address</label>
+          <input type="text" id="server-url" class="mono" placeholder="http://192.168.1.10:8000"
+                 autocomplete="off" required>
+        </div>
+        <div class="field">
+          <label for="api-key">API key <span id="key-hint" style="text-transform:none;letter-spacing:normal"></span></label>
+          <input type="password" id="api-key" class="mono" autocomplete="off"
+                 placeholder="pairing key from the console dashboard">
+        </div>
+        <div class="row tight">
+          <div class="field">
+            <label for="poll-seconds">Poll interval (s)</label>
+            <input type="number" id="poll-seconds" min="1" max="3600" required>
+          </div>
+          <div class="field">
+            <label for="switch-pin">Switch GPIO</label>
+            <input type="number" id="switch-pin" min="0" max="33" required>
+          </div>
+          <div class="field">
+            <label for="switch-level">Closes on</label>
+            <select id="switch-level">
+              <option value="1">HIGH</option>
+              <option value="0">LOW</option>
+            </select>
+          </div>
+        </div>
+        <div class="row tight">
+          <div class="field">
+            <label for="sense-pin">Power-sense GPIO (optional)</label>
+            <input type="number" id="sense-pin" min="-1" max="39" required>
+          </div>
+          <div class="field">
+            <label for="sense-level">Machine is on when</label>
+            <select id="sense-level">
+              <option value="1">HIGH</option>
+              <option value="0">LOW</option>
+            </select>
+          </div>
+        </div>
+        <button class="primary" type="submit">Save configuration</button>
+      </form>
+      <div class="msg" id="config-msg"></div>
+      <div class="actions">
+        <button class="ghost" type="button" id="btn-test">Test connection</button>
+        <button class="ghost" type="button" id="btn-refresh">Refresh</button>
+        <button class="danger" type="button" id="btn-reboot">Reboot</button>
+        <button class="ghost" type="button" id="btn-logout" style="margin-left:auto">Sign out</button>
+      </div>
+    </section>
+  </div>
+
+  <p class="foot" id="foot"></p>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let statusTimer = null;
+
+async function api(path, options) {
+  const response = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, options));
+  let payload = {};
+  try { payload = await response.json(); } catch (err) { /* empty body */ }
+  return { ok: response.ok, status: response.status, payload };
+}
+
+function show(message, element, kind) {
+  element.textContent = message;
+  element.className = "msg show " + (kind || "err");
+}
+function clear(element) { element.className = "msg"; element.textContent = ""; }
+
+function screen(name) {
+  ["claim", "login", "config"].forEach((id) => {
+    $("screen-" + id).classList.toggle("hide", id !== name);
+  });
+}
+
+function duration(seconds) {
+  if (seconds === null || seconds === undefined) return "—";
+  if (seconds < 60) return seconds + "s";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes + "m " + (seconds % 60) + "s";
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? hours + "h " + (minutes % 60) + "m"
+                    : Math.floor(hours / 24) + "d " + (hours % 24) + "h";
+}
+
+function rows(pairs) {
+  return pairs.map(([label, value]) =>
+    `<div class="dl-row"><dt>${label}</dt><dd>${value}</dd></div>`).join("");
+}
+
+function renderStatus(state) {
+  const wifi = state.wifi || {};
+  const link = state.link || {};
+  $("subtitle").textContent = wifi.connected
+    ? "connected to " + (wifi.ssid || "Wi-Fi") : "setup mode";
+  $("foot").textContent = "firmware " + state.firmware + " · up " + duration(state.uptime_s);
+
+  const pill = $("link-pill");
+  const label = $("link-label");
+  if (!state.configured) {
+    pill.className = "pill idle"; label.textContent = "Not configured";
+  } else if (link.busy) {
+    pill.className = "pill warn"; label.textContent = "Pulsing";
+  } else if (link.linked) {
+    pill.className = "pill ok"; label.textContent = "Linked";
+  } else {
+    pill.className = "pill warn"; label.textContent = link.polled ? "Server unreachable" : "Never polled";
+  }
+
+  $("status-list").innerHTML = rows([
+    ["Wi-Fi", wifi.connected ? `${wifi.ssid} · ${wifi.ip}` : (state.ap_mode ? "setup network" : "disconnected")],
+    ["Signal", wifi.connected ? wifi.rssi + " dBm" : "—"],
+    ["Console says", link.machine_status ? link.machine_status : "—"],
+    ["Last poll", link.polled ? duration(link.seconds_since_poll) + " ago" : "never"],
+    ["Poll cadence", "every " + (link.poll_interval || "—") + "s"],
+    ["Pulses delivered", (link.commands_ok || 0) + " ok · " + (link.commands_failed || 0) + " failed"],
+    ["Last command", link.last_action || "—"],
+    ["Last error", link.last_error ? `<span style="color:#fda4af">${link.last_error}</span>` : "none"],
+  ]);
+}
+
+async function loadConfig() {
+  const { ok, payload } = await api("/api/config");
+  if (!ok) return;
+  $("wifi-ssid").value = payload.wifi_ssid || "";
+  $("wifi-password").placeholder = payload.wifi_password_set ? "•••••••• (stored)" : "network password";
+  $("server-url").value = payload.server_url || "";
+  $("api-key").placeholder = payload.api_key_set ? "•••••••• (stored)" : "pairing key from the console dashboard";
+  $("key-hint").textContent = payload.api_key_hint ? "· stored " + payload.api_key_hint : "";
+  $("poll-seconds").value = payload.poll_seconds;
+  $("switch-pin").value = payload.switch_pin;
+  $("switch-level").value = payload.switch_active_high ? "1" : "0";
+  $("sense-pin").value = payload.sense_pin;
+  $("sense-level").value = payload.sense_active_high ? "1" : "0";
+}
+
+async function refresh() {
+  const { payload } = await api("/api/status");
+  if (!payload || payload.claimed === undefined) return;
+
+  if (!payload.claimed) {
+    screen("claim");
+  } else if (!payload.authenticated) {
+    screen("login");
+    if (payload.locked_for > 0) {
+      show("Locked for " + payload.locked_for + " more seconds.", $("login-msg"));
+    }
+  } else {
+    const wasHidden = $("screen-config").classList.contains("hide");
+    screen("config");
+    renderStatus(payload);
+    if (wasHidden) await loadConfig();
+  }
+}
+
+function startPolling() {
+  if (statusTimer) clearInterval(statusTimer);
+  statusTimer = setInterval(refresh, 4000);
+}
+
+$("form-claim").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  clear($("claim-msg"));
+  const password = $("claim-password").value;
+  const confirm = $("claim-confirm").value;
+  if (password.length < 8) return show("Password must be at least 8 characters.", $("claim-msg"));
+  if (password !== confirm) return show("The two passwords do not match.", $("claim-msg"));
+
+  const { ok, payload } = await api("/api/claim", {
+    method: "POST", body: JSON.stringify({ password, confirm }),
+  });
+  if (!ok) return show(payload.detail || "Could not set the password.", $("claim-msg"));
+  $("claim-password").value = $("claim-confirm").value = "";
+  await refresh();
+});
+
+$("form-login").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  clear($("login-msg"));
+  const { ok, payload } = await api("/api/login", {
+    method: "POST", body: JSON.stringify({ password: $("login-password").value }),
+  });
+  if (!ok) return show(payload.detail || "Wrong password.", $("login-msg"));
+  $("login-password").value = "";
+  await refresh();
+});
+
+$("form-config").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  clear($("config-msg"));
+  const body = {
+    wifi_ssid: $("wifi-ssid").value.trim(),
+    wifi_password: $("wifi-password").value,
+    server_url: $("server-url").value.trim(),
+    api_key: $("api-key").value.trim(),
+    poll_seconds: Number($("poll-seconds").value),
+    switch_pin: Number($("switch-pin").value),
+    switch_active_high: $("switch-level").value === "1",
+    sense_pin: Number($("sense-pin").value),
+    sense_active_high: $("sense-level").value === "1",
+  };
+  const { ok, payload } = await api("/api/config", { method: "POST", body: JSON.stringify(body) });
+  if (!ok) return show(payload.detail || "Could not save.", $("config-msg"));
+  $("wifi-password").value = "";
+  $("api-key").value = "";
+  show(payload.wifi_changed ? "Saved. Reboot to join the new network." : "Saved.",
+       $("config-msg"), "good");
+  await loadConfig();
+  await refresh();
+});
+
+$("btn-test").addEventListener("click", async () => {
+  clear($("config-msg"));
+  $("btn-test").disabled = true;
+  $("btn-test").textContent = "Testing…";
+  const { ok, payload } = await api("/api/test", { method: "POST" });
+  show(payload.message || (ok ? "Connected." : "Failed."), $("config-msg"), ok ? "good" : "err");
+  $("btn-test").disabled = false;
+  $("btn-test").textContent = "Test connection";
+});
+
+$("btn-refresh").addEventListener("click", async () => { await loadConfig(); await refresh(); });
+
+$("btn-reboot").addEventListener("click", async () => {
+  if (!window.confirm("Reboot the device? The switch is released first.")) return;
+  await api("/api/reboot", { method: "POST" });
+  show("Rebooting — this page will reconnect shortly.", $("config-msg"), "good");
+});
+
+$("btn-logout").addEventListener("click", async () => {
+  await api("/api/logout", { method: "POST" });
+  await refresh();
+});
+
+refresh().then(startPolling);
+</script>
+</body>
+</html>

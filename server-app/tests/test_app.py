@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("TARDIS_STATE_FILE", str(tmp_path / "state.json"))
-    monkeypatch.setenv("TARDIS_TRANSITION_SECONDS", "1")
+    monkeypatch.setenv("TARDIS_ACK_TIMEOUT_SECONDS", "60")
 
     # The modules read settings at import time, so reload them per test.
     from app.core import config, machine, runtime, storage
@@ -43,6 +43,28 @@ def shift_clock(monkeypatch, seconds: int) -> float:
     target = time.time() + seconds
     monkeypatch.setattr(auth_module, "_now", lambda: int(target))
     return target
+
+
+def key_headers(client) -> dict[str, str]:
+    """Headers a paired device sends — the pairing key, never a session cookie."""
+    return {"X-Tardis-Key": client.deps.machine.pairing_key}
+
+
+def poll(client, **report) -> dict:
+    """One hardware heartbeat, returning the decoded poll response."""
+    response = client.post("/api/hardware/poll", json=report, headers=key_headers(client))
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def ack(client, command_id: str, *, status: str = "completed", detail: str | None = None) -> dict:
+    response = client.post(
+        "/api/hardware/ack",
+        json={"id": command_id, "status": status, "detail": detail},
+        headers=key_headers(client),
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
 
 
 def enrol(client) -> str:
@@ -144,23 +166,31 @@ def test_health_is_public(client):
     assert payload["enrolled"] is False
 
 
-def test_power_cycle(client):
+def test_power_cycle_needs_the_hardware_to_ack(client):
     enrol(client)
     assert client.get("/api/machine").json()["status"] == "offline"
 
     booting = client.post("/api/machine/power", json={"action": "on"}).json()
     assert booting["status"] == "booting"
     assert booting["transitioning"] is True
+    assert booting["pending_action"] == "power_on"
 
-    # A second command while in transition is refused.
+    # A second command while one is in flight is refused.
     assert client.post("/api/machine/power", json={"action": "on"}).status_code == 409
 
-    time.sleep(1.1)
+    # Nothing moves until the device pulses the switch and says so.
+    assert client.get("/api/machine").json()["status"] == "booting"
+    command = poll(client)["command"]
+    assert command["action"] == "power_on"
+    assert command["pulse_ms"] == 500
+
+    ack(client, command["id"])
     assert client.get("/api/machine").json()["status"] == "online"
 
     off = client.post("/api/machine/power", json={"action": "toggle"}).json()
     assert off["status"] == "shutting_down"
-    time.sleep(1.1)
+    assert off["pending_action"] == "graceful_shutdown"
+    ack(client, poll(client)["command"]["id"])
     assert client.get("/api/machine").json()["is_on"] is False
 
 
@@ -219,3 +249,221 @@ def test_preferences_fragment_saves_unchecked_boxes_as_false(client):
     assert prefs["confirm_before_power_off"] is False
     assert prefs["animations"] is False
     assert prefs["poll_interval"] == 5
+
+
+# ---------------------------------------------------------------- hardware link
+
+
+def test_hardware_endpoints_reject_a_missing_or_wrong_key(client):
+    enrol(client)
+    assert client.post("/api/hardware/poll", json={}).status_code == 401
+    assert (
+        client.post("/api/hardware/poll", json={}, headers={"X-Tardis-Key": "nope"}).status_code
+        == 401
+    )
+    assert (
+        client.post(
+            "/api/hardware/ack", json={"id": "x"}, headers={"X-Tardis-Key": "nope"}
+        ).status_code
+        == 401
+    )
+
+
+def test_hardware_endpoints_do_not_accept_an_operator_session(client):
+    """A logged-in browser is not hardware: the key is the only way in."""
+    enrol(client)  # leaves the session cookie on the client
+    assert client.post("/api/hardware/poll", json={}).status_code == 401
+
+
+def test_operator_endpoints_do_not_accept_the_pairing_key(client):
+    """And the reverse: the device's key must not unlock the console's API."""
+    enrol(client)
+    headers = key_headers(client)
+    client.cookies.clear()
+    assert client.get("/api/state", headers=headers).status_code == 401
+    assert client.get("/api/machine", headers=headers).status_code == 401
+    assert client.get("/api/hardware", headers=headers).status_code == 401
+    assert (
+        client.post("/api/machine/power", json={"action": "on"}, headers=headers).status_code
+        == 401
+    )
+
+
+def test_poll_reports_device_details_and_cadence(client):
+    enrol(client)
+    payload = poll(client, firmware="1.0.0", ip="192.168.1.50", rssi=-57, uptime_s=99)
+    assert payload["command"] is None
+    assert payload["poll_interval"] == client.deps.settings.hardware_poll_seconds
+
+    hardware = client.get("/api/hardware").json()
+    assert hardware["linked"] is True
+    assert hardware["firmware"] == "1.0.0"
+    assert hardware["ip"] == "192.168.1.50"
+    assert hardware["rssi"] == -57
+
+
+def test_console_shows_unlinked_until_the_device_polls(client):
+    enrol(client)
+    assert client.get("/api/machine").json()["linked"] is False
+    poll(client)
+    assert client.get("/api/machine").json()["linked"] is True
+
+
+def test_command_is_repeated_until_acked(client):
+    enrol(client)
+    client.post("/api/machine/power", json={"action": "on"})
+    first = poll(client)["command"]
+    second = poll(client)["command"]
+    assert first["id"] == second["id"]  # a dropped poll must not lose the command
+    ack(client, first["id"])
+    assert poll(client)["command"] is None
+
+
+def test_hard_power_off_asks_for_a_five_second_hold(client):
+    enrol(client)
+    client.post("/api/machine/power", json={"action": "on"})
+    ack(client, poll(client)["command"]["id"])
+
+    state = client.post("/api/machine/power", json={"action": "hard_off"}).json()
+    assert state["pending_action"] == "hard_power_off"
+    command = poll(client)["command"]
+    assert command["action"] == "hard_power_off"
+    assert command["pulse_ms"] == 5000
+    ack(client, command["id"])
+    assert client.get("/api/machine").json()["status"] == "offline"
+
+
+def test_hard_power_off_overrides_a_stuck_boot(client):
+    """The 5 s hold is the escape hatch — allowed even mid-transition."""
+    enrol(client)
+    client.post("/api/machine/power", json={"action": "on"})
+    poll(client)  # boot command delivered, never acked
+
+    forced = client.post("/api/machine/power", json={"action": "hard_power_off"})
+    assert forced.status_code == 200
+    command = poll(client)["command"]
+    assert command["action"] == "hard_power_off"
+    ack(client, command["id"])
+    assert client.get("/api/machine").json()["status"] == "offline"
+
+
+def test_failed_ack_reverts_and_records_the_error(client):
+    enrol(client)
+    client.post("/api/machine/power", json={"action": "on"})
+    command = poll(client)["command"]
+    ack(client, command["id"], status="failed", detail="gpio busy")
+
+    state = client.get("/api/machine").json()
+    assert state["status"] == "offline"
+    assert state["transitioning"] is False
+    assert "gpio busy" in state["last_error"]["message"]
+    assert client.get("/api/hardware").json()["commands_failed"] == 1
+
+
+def test_unacked_command_expires_and_reverts(client, monkeypatch):
+    enrol(client)
+    client.post("/api/machine/power", json={"action": "on"})
+    assert client.get("/api/machine").json()["status"] == "booting"
+
+    # Jump past the ack deadline.
+    from app.core import machine as machine_module
+
+    real_time = time.time
+    monkeypatch.setattr(
+        machine_module.time, "time", lambda: real_time() + client.deps.settings.ack_timeout_seconds + 1
+    )
+
+    state = client.get("/api/machine").json()
+    assert state["status"] == "offline"
+    assert state["transitioning"] is False
+    assert "never confirmed" in state["last_error"]["message"]
+    assert poll(client)["command"] is None
+
+
+def test_ack_for_an_unknown_command_is_refused(client):
+    enrol(client)
+    response = client.post(
+        "/api/hardware/ack", json={"id": "deadbeef"}, headers=key_headers(client)
+    )
+    assert response.status_code == 409
+
+
+def test_power_sense_report_is_ground_truth(client):
+    """A device wired to a sense line settles the state, even without a command."""
+    enrol(client)
+    poll(client, power_sense=True)
+    assert client.get("/api/machine").json()["status"] == "online"
+    poll(client, power_sense=False)
+    assert client.get("/api/machine").json()["status"] == "offline"
+
+
+def test_power_sense_confirms_a_pending_command(client):
+    enrol(client)
+    client.post("/api/machine/power", json={"action": "on"})
+    poll(client, power_sense=True)
+    state = client.get("/api/machine").json()
+    assert state["status"] == "online"
+    assert state["transitioning"] is False
+
+
+# ------------------------------------------------------- auth coverage audit
+
+
+PUBLIC_PATHS = {
+    ("GET", "/api/health"),  # liveness probe, no data
+    ("GET", "/login"),
+    ("POST", "/login"),
+    ("POST", "/login/new-key"),
+    ("POST", "/logout"),  # clearing a cookie needs no cookie
+    ("POST", "/api/auth/enroll"),
+    ("POST", "/api/auth/login"),
+    ("POST", "/api/auth/logout"),
+    ("GET", "/api/auth/status"),  # boolean flags only, drives the login page
+}
+HARDWARE_PATHS = {("POST", "/api/hardware/poll"), ("POST", "/api/hardware/ack")}
+
+
+def test_every_route_is_guarded_by_a_session_or_the_pairing_key(client):
+    """No route may be reachable by an anonymous caller unless it is on the list.
+
+    This is the alignment check between the two flows: the console's routes take
+    the operator's session, the device's routes take the pairing key, and
+    nothing accepts both.
+    """
+    enrol(client)
+    client.cookies.clear()
+
+    unguarded: list[str] = []
+    for route in client.app.routes:
+        path = getattr(route, "path", "")
+        if not path or path.startswith("/static") or "{" in path:
+            continue
+        for method in sorted(getattr(route, "methods", set()) - {"HEAD", "OPTIONS"}):
+            if (method, path) in PUBLIC_PATHS:
+                continue
+            response = client.request(method, path, json={}, follow_redirects=False)
+            if (method, path) in HARDWARE_PATHS:
+                if response.status_code != 401:
+                    unguarded.append(f"{method} {path} -> {response.status_code} (needs key)")
+                continue
+            # Session routes: 401 for the API, a redirect to /login for pages.
+            guarded = response.status_code == 401 or (
+                response.status_code in (303, 307) and "/login" in response.headers.get("location", "")
+            )
+            if not guarded:
+                unguarded.append(f"{method} {path} -> {response.status_code}")
+
+    assert not unguarded, "unguarded routes: " + ", ".join(unguarded)
+
+
+def test_a_bare_poll_or_ack_does_not_blank_device_details(client):
+    enrol(client)
+    poll(client, firmware="1.0.0", ip="192.168.1.50", rssi=-57)
+    poll(client)  # empty heartbeat
+    client.post("/api/machine/power", json={"action": "on"})
+    ack(client, poll(client)["command"]["id"])
+
+    hardware = client.get("/api/hardware").json()
+    assert hardware["firmware"] == "1.0.0"
+    assert hardware["ip"] == "192.168.1.50"
+    assert hardware["rssi"] == -57

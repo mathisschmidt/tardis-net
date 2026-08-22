@@ -59,9 +59,21 @@ class Settings:
     max_failed_attempts: int = field(default_factory=lambda: _env_int("TARDIS_MAX_ATTEMPTS", 5))
     lockout_seconds: int = field(default_factory=lambda: _env_int("TARDIS_LOCKOUT_SECONDS", 300))
 
-    # How long the simulated boot / shutdown sequence takes.
-    transition_seconds: int = field(
-        default_factory=lambda: _env_int("TARDIS_TRANSITION_SECONDS", 8)
+    # How long the hardware has to pulse the switch and acknowledge a command
+    # before the server gives up and reverts the machine to its last state.
+    ack_timeout_seconds: int = field(
+        default_factory=lambda: _env_int("TARDIS_ACK_TIMEOUT_SECONDS", 60)
+    )
+
+    # How often the hardware should poll for work. Served to the device on every
+    # poll, so the cadence is changed here rather than by reflashing.
+    hardware_poll_seconds: int = field(
+        default_factory=lambda: _env_int("TARDIS_HARDWARE_POLL_SECONDS", 5)
+    )
+
+    # A poll older than this means the cached power state is no longer trusted.
+    link_timeout_seconds: int = field(
+        default_factory=lambda: _env_int("TARDIS_LINK_TIMEOUT_SECONDS", 30)
     )
 
 
