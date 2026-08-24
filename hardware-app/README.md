@@ -16,26 +16,28 @@ connection.
 
 ## First run
 
-1. **Flash it.** `pio run -t upload`, then `pio device monitor`.
-2. **Join the setup network.** With nothing configured the device opens an
-   access point called `tardis-setup-XXXX`. Its password is random, generated
-   once per device and printed on the serial log:
+No computer or serial monitor is needed for any of this — a phone is enough.
 
-   ```
-   =======================================================
-     Setup network : tardis-setup-3F1A
-     Password      : 7f2c9a41e8
-     Portal        : http://192.168.4.1/
-   =======================================================
-   ```
-3. **Claim the portal.** Open <http://192.168.4.1/>. Nobody has set a password
-   yet, so the first screen asks you to choose one. From then on that page
-   always asks for it — the same shape as the console's "enrol once, then just
-   the code".
-4. **Configure it.** Fill in the Wi-Fi network, the console address
-   (`http://<host>:8000`) and the **pairing key** copied from the console's
-   dashboard, then save and reboot. The device joins your network, the setup AP
-   closes, and the portal stays reachable at the device's LAN address.
+1. **Flash it.** `pio run -t upload` (a monitor is only useful for
+   watching the log, not required to set the device up).
+2. **Join the setup network.** With nothing configured the device opens an
+   open (no-password) access point called `tardis-setup-XXXX` — `XXXX` is a
+   short id unique to that board. Join it from your phone's Wi-Fi settings and
+   a **"Sign in to network" prompt should open the portal by itself** within a
+   few seconds — the device answers every DNS lookup with its own address
+   specifically to trigger that captive-portal prompt. If it does not appear,
+   open a browser and go to <http://192.168.4.1/>.
+3. **Claim the portal.** Nobody has set a password yet, so the first screen
+   asks you to choose one. From then on that page always asks for it — the
+   same shape as the console's "enrol once, then just the code".
+4. **Configure it.** Fill in the Wi-Fi network — tap *Scan* to pick it from
+   what the device can see, and *Test* to check the password before saving —
+   the console address (`http://<host>:8000`) and the **pairing key** copied
+   from the console's dashboard, then save and reboot. The device joins your
+   network, the setup AP closes, and the portal stays reachable at the
+   device's LAN address, **and also at `http://tardis-XXXX.local/`** (the same
+   `XXXX` id from the setup network name) — no need to hunt for its IP on the
+   router.
 5. **Check the console.** The dashboard's *Hardware link* card turns to
    `Polling` within a few seconds, and the power button starts working.
 
@@ -102,6 +104,13 @@ POST /api/hardware/ack      {"id":"…","status":"completed"}
   once on the console instead of reflashing. The device's own setting is the
   fallback when the server does not say.
 
+**If the portal's "Test" (in the Console box) reports it cannot reach the
+server, check how `server-app` was started first.** `tardis run` defaults to
+`--host 127.0.0.1` — loopback only, reachable from `curl` on that same
+machine but invisible to a separate physical device like the ESP32. Start it
+with `tardis run --host 0.0.0.0` (or the machine's LAN IP) so the console
+actually answers requests arriving over Wi-Fi.
+
 ## The portal's own API
 
 Served by the device on port 80. The claim-then-login rule mirrors the console.
@@ -115,6 +124,8 @@ Served by the device on port 80. The claim-then-login rule mirrors the console.
 | `POST` | `/api/logout` | — |
 | `GET`/`POST` | `/api/config` | session cookie |
 | `POST` | `/api/test` | session cookie — polls the console once and reports what came back |
+| `GET` | `/api/wifi/scan` | session cookie — nearby SSIDs, signal and whether each is secured |
+| `POST` | `/api/wifi/test` | session cookie — briefly joins a network to check credentials, then restores the saved one |
 | `POST` | `/api/reboot` | session cookie |
 
 Security notes:
@@ -127,8 +138,13 @@ Security notes:
   minutes.
 - The API key and Wi-Fi password are write-only over the portal API: they go in,
   and only a masked hint (`••••••••sROK`) comes back.
-- The setup AP is WPA2 with a per-device random password, so an open network
-  never exists — even before the device is claimed.
+- The setup AP is open (no password) by design, so a phone can join it without
+  being told a secret first — it only exists until the device is claimed and
+  configured, at which point it closes.
+- mDNS (`http://tardis-XXXX.local/`) is the most reliable on iOS/macOS. Some
+  Android browsers do not resolve `.local` names; the device's LAN IP (visible
+  in `pio device monitor` or your router's client list) always works as a
+  fallback.
 
 ## Development
 

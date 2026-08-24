@@ -44,7 +44,6 @@ class Device:
         self.session_expires = 0.0
         self.failed_attempts = 0
         self.locked_until = 0.0
-        self.ap_password = secrets.token_hex(5)
         self.config = {
             "wifi_ssid": "",
             "wifi_password": "",
@@ -220,6 +219,9 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/config":
             if self._require_auth():
                 self._get_config()
+        elif self.path == "/api/wifi/scan":
+            if self._require_auth():
+                self._wifi_scan()
         else:
             self.send_response(302)
             self.send_header("Location", "/")
@@ -232,6 +234,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/logout": self._logout,
             "/api/config": self._save_config,
             "/api/test": self._test,
+            "/api/wifi/test": self._wifi_test,
             "/api/reboot": self._reboot,
         }
         handler = routes.get(self.path)
@@ -314,7 +317,6 @@ class Handler(BaseHTTPRequestHandler):
                 "switch_active_high": config["switch_active_high"],
                 "sense_pin": config["sense_pin"],
                 "sense_active_high": config["sense_active_high"],
-                "ap_password": self.device.ap_password,
             },
         )
 
@@ -375,6 +377,36 @@ class Handler(BaseHTTPRequestHandler):
             message = f"Could not reach {config['server_url']}. ({exc})"
             self.device.link.update(polled=True, linked=False, last_error=message)
             self._json(502, {"ok": False, "message": message})
+
+    # A fixed, fake neighbourhood — there is no real radio to scan on a laptop.
+    _FAKE_NETWORKS = [
+        {"ssid": "home-network", "rssi": -42, "secure": True},
+        {"ssid": "Neighbour 5G", "rssi": -68, "secure": True},
+        {"ssid": "Free Public WiFi", "rssi": -81, "secure": False},
+    ]
+    _FAKE_PASSWORDS = {"home-network": "stored-secret", "Neighbour 5G": "hunter22"}
+
+    def _wifi_scan(self) -> None:
+        self._json(200, {"networks": self._FAKE_NETWORKS})
+
+    def _wifi_test(self) -> None:
+        if not self._require_auth():
+            return
+        body = self._body()
+        ssid = (body.get("ssid") or "").strip()
+        password = body.get("password") or ""
+        if not ssid:
+            self._error(400, "Enter a network name first.")
+            return
+        if not password and ssid == self.device.config["wifi_ssid"]:
+            password = self.device.config["wifi_password"]
+        expected = self._FAKE_PASSWORDS.get(ssid)
+        if expected is None:
+            self._json(502, {"ok": False, "message": "Network not found."})
+        elif password != expected:
+            self._json(502, {"ok": False, "message": "Could not connect — check the password."})
+        else:
+            self._json(200, {"ok": True, "message": "Connected — 192.168.1.53"})
 
     def _reboot(self) -> None:
         if not self._require_auth():

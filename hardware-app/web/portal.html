@@ -81,6 +81,26 @@ table.pulses td{border-top:1px solid rgba(148,163,184,.08);padding:.4rem 0;color
 table.pulses td:last-child{text-align:right;color:#67e8f9;font-family:ui-monospace,Menlo,monospace}
 .foot{text-align:center;font-size:.72rem;color:#475569;margin-top:1.5rem}
 .hide{display:none}
+.pwrap{position:relative}
+.pwrap input{padding-right:2.6rem}
+.pw-toggle{position:absolute;top:0;right:0;bottom:0;width:2.6rem;padding:0;
+  background:transparent;border:none;color:#64748b;font-size:1rem;border-radius:0 .75rem .75rem 0}
+.pw-toggle:hover{color:#a5f3fc;background:rgba(34,211,238,.06)}
+.subcard{border-radius:1rem;border:1px solid rgba(148,163,184,.14);
+  background:rgba(148,163,184,.03);padding:1.1rem 1.1rem .9rem;margin-bottom:1.25rem}
+.subcard-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:.9rem}
+.subcard-title{font-size:.78rem;font-weight:600;color:#94a3b8;text-transform:uppercase;
+  letter-spacing:.14em;margin:0}
+.scan-list{margin-top:.6rem;border-radius:.75rem;border:1px solid rgba(148,163,184,.14);
+  overflow:hidden}
+.scan-item{display:flex;justify-content:space-between;align-items:center;gap:.75rem;
+  width:100%;text-align:left;font:inherit;cursor:pointer;border:none;
+  background:rgba(4,7,15,.4);color:#cbd5e1;padding:.55rem .8rem;font-size:.83rem;
+  border-top:1px solid rgba(148,163,184,.08)}
+.scan-item:first-child{border-top:none}
+.scan-item:hover{background:rgba(34,211,238,.07);color:#e2e8f0}
+.scan-item .ssid{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scan-item .meta{flex:none;color:#64748b;font-size:.76rem;font-family:ui-monospace,Menlo,monospace}
 </style>
 </head>
 <body>
@@ -104,12 +124,20 @@ table.pulses td:last-child{text-align:right;color:#67e8f9;font-family:ui-monospa
     <form id="form-claim">
       <div class="field">
         <label for="claim-password">New portal password</label>
-        <input type="password" id="claim-password" autocomplete="new-password"
-               placeholder="at least 8 characters" required>
+        <div class="pwrap">
+          <input type="password" id="claim-password" autocomplete="new-password"
+                 placeholder="at least 8 characters" required>
+          <button type="button" class="pw-toggle" data-target="claim-password"
+                  aria-label="Show password">👁</button>
+        </div>
       </div>
       <div class="field">
         <label for="claim-confirm">Confirm password</label>
-        <input type="password" id="claim-confirm" autocomplete="new-password" required>
+        <div class="pwrap">
+          <input type="password" id="claim-confirm" autocomplete="new-password" required>
+          <button type="button" class="pw-toggle" data-target="claim-confirm"
+                  aria-label="Show password">👁</button>
+        </div>
       </div>
       <button class="primary" type="submit">Claim device</button>
     </form>
@@ -123,7 +151,11 @@ table.pulses td:last-child{text-align:right;color:#67e8f9;font-family:ui-monospa
     <form id="form-login">
       <div class="field">
         <label for="login-password">Portal password</label>
-        <input type="password" id="login-password" autocomplete="current-password" required>
+        <div class="pwrap">
+          <input type="password" id="login-password" autocomplete="current-password" required>
+          <button type="button" class="pw-toggle" data-target="login-password"
+                  aria-label="Show password">👁</button>
+        </div>
       </div>
       <button class="primary" type="submit">Unlock</button>
     </form>
@@ -154,25 +186,53 @@ table.pulses td:last-child{text-align:right;color:#67e8f9;font-family:ui-monospa
       <h2>Configuration</h2>
       <p class="hint">Saved on the device. Leave a secret blank to keep the stored one.</p>
       <form id="form-config">
-        <div class="row">
-          <div class="field">
-            <label for="wifi-ssid">Wi-Fi network</label>
-            <input type="text" id="wifi-ssid" autocomplete="off" maxlength="32" required>
+        <div class="subcard" id="wifi-box">
+          <div class="subcard-head">
+            <p class="subcard-title">Wi-Fi network</p>
+            <div class="actions" style="margin:0">
+              <button class="ghost" type="button" id="btn-scan">Scan</button>
+              <button class="ghost" type="button" id="btn-test-wifi">Test</button>
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="wifi-ssid">Network name</label>
+              <input type="text" id="wifi-ssid" autocomplete="off" maxlength="32" required>
+            </div>
+            <div class="field">
+              <label for="wifi-password">Password</label>
+              <div class="pwrap">
+                <input type="password" id="wifi-password" autocomplete="new-password">
+                <button type="button" class="pw-toggle" data-target="wifi-password"
+                        aria-label="Show password">👁</button>
+              </div>
+            </div>
+          </div>
+          <div class="scan-list hide" id="wifi-scan-results"></div>
+          <div class="msg" id="wifi-test-msg"></div>
+        </div>
+        <div class="subcard" id="console-box">
+          <div class="subcard-head">
+            <p class="subcard-title">Console</p>
+            <div class="actions" style="margin:0">
+              <button class="ghost" type="button" id="btn-test">Test</button>
+            </div>
           </div>
           <div class="field">
-            <label for="wifi-password">Wi-Fi password</label>
-            <input type="password" id="wifi-password" autocomplete="new-password">
+            <label for="server-url">Console address</label>
+            <input type="text" id="server-url" class="mono" placeholder="http://192.168.1.10:8000"
+                   autocomplete="off" required>
           </div>
-        </div>
-        <div class="field">
-          <label for="server-url">Console address</label>
-          <input type="text" id="server-url" class="mono" placeholder="http://192.168.1.10:8000"
-                 autocomplete="off" required>
-        </div>
-        <div class="field">
-          <label for="api-key">API key <span id="key-hint" style="text-transform:none;letter-spacing:normal"></span></label>
-          <input type="password" id="api-key" class="mono" autocomplete="off"
-                 placeholder="pairing key from the console dashboard">
+          <div class="field">
+            <label for="api-key">API key <span id="key-hint" style="text-transform:none;letter-spacing:normal"></span></label>
+            <div class="pwrap">
+              <input type="password" id="api-key" class="mono" autocomplete="off"
+                     placeholder="pairing key from the console dashboard">
+              <button type="button" class="pw-toggle" data-target="api-key"
+                      aria-label="Show password">👁</button>
+            </div>
+          </div>
+          <div class="msg" id="console-test-msg"></div>
         </div>
         <div class="row tight">
           <div class="field">
@@ -208,7 +268,6 @@ table.pulses td:last-child{text-align:right;color:#67e8f9;font-family:ui-monospa
       </form>
       <div class="msg" id="config-msg"></div>
       <div class="actions">
-        <button class="ghost" type="button" id="btn-test">Test connection</button>
         <button class="ghost" type="button" id="btn-refresh">Refresh</button>
         <button class="danger" type="button" id="btn-reboot">Reboot</button>
         <button class="ghost" type="button" id="btn-logout" style="margin-left:auto">Sign out</button>
@@ -380,13 +439,13 @@ $("form-config").addEventListener("submit", async (event) => {
 });
 
 $("btn-test").addEventListener("click", async () => {
-  clear($("config-msg"));
+  clear($("console-test-msg"));
   $("btn-test").disabled = true;
   $("btn-test").textContent = "Testing…";
   const { ok, payload } = await api("/api/test", { method: "POST" });
-  show(payload.message || (ok ? "Connected." : "Failed."), $("config-msg"), ok ? "good" : "err");
+  show(payload.message || (ok ? "Connected." : "Failed."), $("console-test-msg"), ok ? "good" : "err");
   $("btn-test").disabled = false;
-  $("btn-test").textContent = "Test connection";
+  $("btn-test").textContent = "Test";
 });
 
 $("btn-refresh").addEventListener("click", async () => { await loadConfig(); await refresh(); });
@@ -400,6 +459,67 @@ $("btn-reboot").addEventListener("click", async () => {
 $("btn-logout").addEventListener("click", async () => {
   await api("/api/logout", { method: "POST" });
   await refresh();
+});
+
+document.addEventListener("click", (event) => {
+  const button = event.target.closest(".pw-toggle");
+  if (!button) return;
+  const input = $(button.dataset.target);
+  const showing = input.type === "text";
+  input.type = showing ? "password" : "text";
+  button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+  button.textContent = showing ? "👁" : "🙈";
+});
+
+function signalLabel(rssi) {
+  if (rssi >= -60) return "strong";
+  if (rssi >= -75) return "ok";
+  return "weak";
+}
+
+$("btn-scan").addEventListener("click", async () => {
+  const results = $("wifi-scan-results");
+  $("btn-scan").disabled = true;
+  $("btn-scan").textContent = "Scanning…";
+  const { ok, payload } = await api("/api/wifi/scan");
+  $("btn-scan").disabled = false;
+  $("btn-scan").textContent = "Scan";
+  if (!ok || !payload.networks) {
+    results.classList.remove("hide");
+    results.innerHTML = `<div class="scan-item">Scan failed — try again.</div>`;
+    return;
+  }
+  if (!payload.networks.length) {
+    results.classList.remove("hide");
+    results.innerHTML = `<div class="scan-item">No networks found nearby.</div>`;
+    return;
+  }
+  results.classList.remove("hide");
+  results.innerHTML = payload.networks.map((network) => `
+    <button type="button" class="scan-item" data-ssid="${network.ssid.replace(/"/g, "&quot;")}">
+      <span class="ssid">${network.secure ? "🔒 " : ""}${network.ssid}</span>
+      <span class="meta">${network.rssi} dBm · ${signalLabel(network.rssi)}</span>
+    </button>`).join("");
+  results.querySelectorAll(".scan-item[data-ssid]").forEach((item) => {
+    item.addEventListener("click", () => {
+      $("wifi-ssid").value = item.dataset.ssid;
+      $("wifi-password").focus();
+    });
+  });
+});
+
+$("btn-test-wifi").addEventListener("click", async () => {
+  clear($("wifi-test-msg"));
+  const ssid = $("wifi-ssid").value.trim();
+  if (!ssid) return show("Enter a network name first.", $("wifi-test-msg"));
+  $("btn-test-wifi").disabled = true;
+  $("btn-test-wifi").textContent = "Testing…";
+  const { ok, payload } = await api("/api/wifi/test", {
+    method: "POST", body: JSON.stringify({ ssid, password: $("wifi-password").value }),
+  });
+  show(payload.message || (ok ? "Connected." : "Failed."), $("wifi-test-msg"), ok ? "good" : "err");
+  $("btn-test-wifi").disabled = false;
+  $("btn-test-wifi").textContent = "Test";
 });
 
 refresh().then(startPolling);

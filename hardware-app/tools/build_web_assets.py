@@ -13,7 +13,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+try:
+    ROOT = Path(__file__).resolve().parent.parent
+except NameError:
+    # Under `pio run`, SCons exec()s this file without setting __file__.
+    # Fall back to the project dir it passes via the injected `env`.
+    Import("env")  # noqa: F821 - injected by SCons
+    ROOT = Path(env["PROJECT_DIR"]).resolve()  # noqa: F821
 SOURCE = ROOT / "web" / "portal.html"
 TARGET = ROOT / "include" / "web_assets.h"
 DELIMITER = "PORTAL"

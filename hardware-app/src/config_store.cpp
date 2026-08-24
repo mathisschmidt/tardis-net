@@ -32,14 +32,6 @@ void ConfigStore::load() {
 
   password_.salt = readString(prefs_, "pwsalt");
   password_.digest = readString(prefs_, "pwhash");
-
-  apPassword_ = readString(prefs_, "appass");
-  if (apPassword_.empty()) {
-    // Ten hex characters: enough entropy for a setup network that is only up
-    // until the device is configured, short enough to type off the serial log.
-    apPassword_ = randomHex(5);
-    prefs_.putString("appass", apPassword_.c_str());
-  }
 }
 
 void ConfigStore::save(const Config& config) {
@@ -65,7 +57,6 @@ void ConfigStore::factoryReset() {
   prefs_.clear();
   config_ = Config{};
   password_ = PasswordRecord{};
-  apPassword_.clear();
   load();
 }
 

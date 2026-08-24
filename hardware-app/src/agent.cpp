@@ -171,7 +171,8 @@ int Agent::request(const char* path, const std::string& body, std::string& respo
   http.addHeader("Content-Type", "application/json");
   http.addHeader(kKeyHeader, config.apiKey.c_str());
 
-  const int httpStatus = http.POST(reinterpret_cast<const uint8_t*>(body.data()), body.size());
+  const int httpStatus =
+      http.POST(const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(body.data())), body.size());
   if (httpStatus > 0) {
     response = std::string(http.getString().c_str());
   } else {
@@ -225,7 +226,9 @@ bool Agent::testConnection(std::string& message) {
   } else if (httpStatus > 0) {
     message = "The server replied " + std::to_string(httpStatus) + ".";
   } else {
-    message = "Could not reach " + config.serverUrl + ".";
+    message = "Could not reach " + config.serverUrl +
+              " — check the address, and that the console isn't bound to "
+              "127.0.0.1 only (it needs --host 0.0.0.0 to answer devices on the network).";
   }
   return false;
 }

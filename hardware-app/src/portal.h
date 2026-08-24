@@ -46,6 +46,8 @@ class Portal {
   void handleGetConfig();
   void handleSaveConfig();
   void handleTest();
+  void handleWifiScan();
+  void handleWifiTest();
   void handleReboot();
   void handleNotFound();
 
@@ -57,7 +59,7 @@ class Portal {
   uint32_t lockRemaining() const;
   void registerFailure();
 
-  std::string body() const;
+  std::string body();
   void sendJson(int code, const std::string& json);
   void sendError(int code, const std::string& message);
 };

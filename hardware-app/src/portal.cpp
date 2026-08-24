@@ -2,6 +2,9 @@
 
 #include <WiFi.h>
 
+#include <algorithm>
+#include <vector>
+
 #include "json_lite.h"
 #include "web_assets.h"
 
@@ -37,6 +40,8 @@ void Portal::begin() {
   server_.on("/api/config", HTTP_GET, [this]() { handleGetConfig(); });
   server_.on("/api/config", HTTP_POST, [this]() { handleSaveConfig(); });
   server_.on("/api/test", HTTP_POST, [this]() { handleTest(); });
+  server_.on("/api/wifi/scan", HTTP_GET, [this]() { handleWifiScan(); });
+  server_.on("/api/wifi/test", HTTP_POST, [this]() { handleWifiTest(); });
   server_.on("/api/reboot", HTTP_POST, [this]() { handleReboot(); });
   server_.onNotFound([this]() { handleNotFound(); });
   // WebServer drops every header it was not told to keep — including the one
@@ -222,7 +227,6 @@ void Portal::handleGetConfig() {
   json += ",\"switch_active_high\":" + boolean(config.switchActiveHigh);
   json += ",\"sense_pin\":" + std::to_string(config.sensePin);
   json += ",\"sense_active_high\":" + boolean(config.senseActiveHigh);
-  json += ",\"ap_password\":" + quote(store_.apPassword());
   json += "}";
   sendJson(200, json);
 }
@@ -291,6 +295,115 @@ void Portal::handleTest() {
   sendJson(ok ? 200 : 502, "{\"ok\":" + boolean(ok) + ",\"message\":" + quote(message) + "}");
 }
 
+void Portal::handleWifiScan() {
+  if (!authed()) {
+    sendError(401, "Sign in first.");
+    return;
+  }
+  if (agent_.busy()) {
+    sendError(409, "A power pulse is in progress — try again in a moment.");
+    return;
+  }
+
+  int count = WiFi.scanNetworks();
+  if (count < 0) count = 0;
+
+  // Fold repeats of the same SSID (seen on more than one channel/AP) into one
+  // entry, keeping the strongest signal, and drop hidden networks — there is
+  // nothing useful to offer as a suggestion for those.
+  struct Seen {
+    std::string ssid;
+    int32_t rssi;
+    bool secure;
+  };
+  std::vector<Seen> networks;
+  for (int i = 0; i < count; i++) {
+    const std::string ssid = std::string(WiFi.SSID(i).c_str());
+    if (ssid.empty()) continue;
+    const int32_t rssi = WiFi.RSSI(i);
+    const bool secure = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+
+    auto existing = std::find_if(networks.begin(), networks.end(),
+                                  [&](const Seen& s) { return s.ssid == ssid; });
+    if (existing == networks.end()) {
+      networks.push_back({ssid, rssi, secure});
+    } else if (rssi > existing->rssi) {
+      existing->rssi = rssi;
+    }
+  }
+  std::sort(networks.begin(), networks.end(),
+            [](const Seen& a, const Seen& b) { return a.rssi > b.rssi; });
+  WiFi.scanDelete();
+
+  std::string json = "{\"networks\":[";
+  for (size_t i = 0; i < networks.size(); i++) {
+    if (i) json += ",";
+    json += "{\"ssid\":" + quote(networks[i].ssid);
+    json += ",\"rssi\":" + std::to_string(networks[i].rssi);
+    json += ",\"secure\":" + boolean(networks[i].secure);
+    json += "}";
+  }
+  json += "]}";
+  sendJson(200, json);
+}
+
+void Portal::handleWifiTest() {
+  if (!authed()) {
+    sendError(401, "Sign in first.");
+    return;
+  }
+  if (agent_.busy()) {
+    sendError(409, "A power pulse is in progress — try again in a moment.");
+    return;
+  }
+  jsonlite::Document doc;
+  if (!doc.parse(body())) {
+    sendError(400, "Malformed request.");
+    return;
+  }
+  const std::string ssid = doc["ssid"].asString();
+  std::string password = doc["password"].asString();
+  if (ssid.empty()) {
+    sendError(400, "Enter a network name first.");
+    return;
+  }
+  // A blank password field means "keep the stored one" everywhere else in this
+  // form, so testing the already-saved network without retyping it works too.
+  const Config& saved = store_.config();
+  if (password.empty() && ssid == saved.wifiSsid) password = saved.wifiPassword;
+
+  WiFi.disconnect();
+  WiFi.begin(ssid.c_str(), password.empty() ? nullptr : password.c_str());
+
+  wl_status_t result = WL_IDLE_STATUS;
+  const uint32_t deadline = millis() + 10000;
+  while (static_cast<int32_t>(millis() - deadline) < 0) {
+    result = WiFi.status();
+    if (result == WL_CONNECTED || result == WL_CONNECT_FAILED || result == WL_NO_SSID_AVAIL) break;
+    delay(150);
+  }
+
+  const bool ok = result == WL_CONNECTED;
+  std::string message;
+  if (ok) {
+    message = "Connected — " + std::string(WiFi.localIP().toString().c_str());
+  } else if (result == WL_NO_SSID_AVAIL) {
+    message = "Network not found.";
+  } else {
+    message = "Could not connect — check the password.";
+  }
+
+  // This was only ever a preview — put the radio back on whatever is
+  // actually saved so normal operation is not left stuck on the tested network.
+  WiFi.disconnect();
+  if (!saved.wifiSsid.empty()) {
+    WiFi.begin(saved.wifiSsid.c_str(),
+               saved.wifiPassword.empty() ? nullptr : saved.wifiPassword.c_str());
+  }
+
+  sendJson(ok ? 200 : 502, "{\"ok\":" + boolean(ok) + ",\"message\":" + quote(message) + "}");
+}
+
 void Portal::handleReboot() {
   if (!authed()) {
     sendError(401, "Sign in first.");
@@ -308,7 +421,7 @@ void Portal::handleNotFound() {
 
 // ------------------------------------------------------------------ helpers
 
-std::string Portal::body() const {
+std::string Portal::body() {
   return std::string(server_.arg("plain").c_str());
 }
 

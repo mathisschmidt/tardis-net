@@ -23,9 +23,6 @@ class ConfigStore {
   bool checkPassword(const std::string& password) const { return password_.matches(password); }
   void setPassword(const std::string& password);
 
-  /** Password of the setup access point, generated once and kept. */
-  const std::string& apPassword() const { return apPassword_; }
-
   /** Wipe everything — the device comes back up unclaimed and unconfigured. */
   void factoryReset();
 
@@ -37,7 +34,6 @@ class ConfigStore {
   Preferences prefs_;
   Config config_;
   PasswordRecord password_;
-  std::string apPassword_;
 
   void load();
 };
