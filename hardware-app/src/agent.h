@@ -43,8 +43,13 @@ class Agent {
   const AgentStatus& status() const { return status_; }
   bool busy() const { return runner_.busy(); }
 
-  /** One poll right now, for the portal's "test connection" button. */
-  bool testConnection(std::string& message);
+  /** One poll right now, for the portal's "test connection" button.
+   *
+   *  ``url``/``key`` are what the operator currently has typed in the form; an
+   *  empty one falls back to what is stored, so Test works before the first
+   *  save — the same rule the Wi-Fi test follows. */
+  bool testConnection(const std::string& url, const std::string& key, std::string& message);
+  bool testConnection(std::string& message) { return testConnection("", "", message); }
 
  private:
   ConfigStore& store_;
@@ -60,7 +65,9 @@ class Agent {
   int readPowerSense() const;
   void poll();
   void sendAck();
-  int request(const char* path, const std::string& body, std::string& response);
+  /** Empty url/key mean "use the stored configuration". */
+  int request(const char* path, const std::string& body, std::string& response,
+              const std::string& url = "", const std::string& key = "");
   void scheduleNextPoll(bool failed);
 };
 

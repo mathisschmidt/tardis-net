@@ -105,11 +105,10 @@ POST /api/hardware/ack      {"id":"…","status":"completed"}
   fallback when the server does not say.
 
 **If the portal's "Test" (in the Console box) reports it cannot reach the
-server, check how `server-app` was started first.** `tardis run` defaults to
-`--host 127.0.0.1` — loopback only, reachable from `curl` on that same
-machine but invisible to a separate physical device like the ESP32. Start it
-with `tardis run --host 0.0.0.0` (or the machine's LAN IP) so the console
-actually answers requests arriving over Wi-Fi.
+console**, check how `server-app` was started. `tardis run` now binds
+`0.0.0.0` by default and prints the LAN address to type into this portal; if it
+was started with `--host 127.0.0.1` it answers only that machine, and no
+separate device can ever poll it.
 
 ## The portal's own API
 
@@ -149,36 +148,54 @@ Security notes:
 ## Development
 
 ```bash
-make test        # everything that runs without an ESP32
+make test        # everything below, in order
 make unit        # protocol, pulse timing, config rules, SHA-256 (native g++)
-make integration # the firmware's flow against the real server-app API
-make portal      # serve the config UI at http://127.0.0.1:8090 with a mock device
+make protocol    # the wire protocol against a real in-process server-app
+make firmware    # the REAL firmware, run as a process against a real server-app
+make portal      # …the same build, left running: http://127.0.0.1:8095/
 ```
 
-`make portal` runs [`tools/mock_device.py`](tools/mock_device.py), which
-re-implements this firmware's HTTP API in Python so the UI can be worked on (and
-browser-tested) without hardware. `make integration` runs the device's poll →
-pulse → ack loop against a real in-process `server-app`, asserting the pulse
-lengths in the table above — if the two sides ever drift apart, that is what
-fails.
+`make host` compiles `src/*.cpp` for this machine against the Arduino shims in
+[`test/host/shim`](test/host/shim) — a small fake for GPIO, Wi-Fi and NVS, with
+a real socket HTTP server and client behind `WebServer` and `HTTPClient`. So the
+portal, the config store and the agent under test are the same translation units
+that get flashed; only the hardware underneath is faked. `make portal` serves
+that build so the UI can be opened in a browser, and `make firmware` drives the
+whole thing — claim the portal, enter a console address and key, save, then
+assert the switch really goes HIGH for 500 ms (or 5 s) when the console queues a
+command.
+
+There is deliberately no second, hand-written mock of the device: a
+re-implementation drifts from the firmware, and a bug that lives in both is
+invisible.
 
 ```
 include/    portable core: protocol, pulse state machine, config rules, SHA-256
 src/        the ESP32 layers: NVS, Wi-Fi, portal, agent
 web/        the portal UI (embedded into the firmware at build time)
-tools/      the embed script and the host mock
-test/       host unit tests + the cross-app integration test
+tools/      the embed script
+test/host/  native unit tests, the Arduino shims, and the firmware end-to-end test
+test/integration/  the wire protocol against server-app
 ```
 
 `include/web_assets.h` is generated from `web/portal.html` on every build and is
 not committed.
 
-### Not built here
+## Verified builds
 
-The firmware in `src/` has not been compiled — the PlatformIO package registry
-was unreachable from the environment this was written in, so the toolchain could
-not be installed. Everything in `include/` is compiled and tested natively
-(`make unit`, 119 checks), the portal UI was driven in a real browser against
-the mock, and the protocol was exercised against the real server
-(`make integration`) — but expect the first `pio run` to want small fixes in the
-Arduino-facing files.
+`pio run` is the supported way to build. For the record, the firmware in this
+commit was also compiled and linked for `esp32dev` against Arduino-ESP32 2.0.17
+with xtensa-esp32-elf GCC 8.4.0 (the toolchain `pio` fetches), producing a
+flashable image:
+
+| | bytes |
+| --- | --- |
+| `.flash.text` | 751 639 |
+| `.flash.rodata` | 197 820 |
+| `.iram0.text` | 84 571 |
+| `.dram0.data` + `.dram0.bss` | 50 360 |
+
+That is roughly 1.0 MB of the 1.31 MB default app partition and ~50 KB of the
+320 KB of RAM. It has not been run on a physical board — the pulse timing,
+portal flow and console handshake were verified with the host build described
+above.

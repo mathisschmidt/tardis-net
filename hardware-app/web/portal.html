@@ -442,7 +442,13 @@ $("btn-test").addEventListener("click", async () => {
   clear($("console-test-msg"));
   $("btn-test").disabled = true;
   $("btn-test").textContent = "Testing…";
-  const { ok, payload } = await api("/api/test", { method: "POST" });
+  const { ok, payload } = await api("/api/test", {
+    method: "POST",
+    body: JSON.stringify({
+      server_url: $("server-url").value.trim(),
+      api_key: $("api-key").value.trim(),
+    }),
+  });
   show(payload.message || (ok ? "Connected." : "Failed."), $("console-test-msg"), ok ? "good" : "err");
   $("btn-test").disabled = false;
   $("btn-test").textContent = "Test";

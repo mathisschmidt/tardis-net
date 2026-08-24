@@ -290,8 +290,17 @@ void Portal::handleTest() {
     sendError(401, "Sign in first.");
     return;
   }
+  // Test what the operator has typed, not only what is already saved — the
+  // natural order is fill in, test, then save. A blank field means "use the
+  // stored one", the same rule as the Wi-Fi test and the config form.
+  jsonlite::Document doc;
+  std::string url, key;
+  if (doc.parse(body())) {
+    url = doc["server_url"].asString();
+    key = doc["api_key"].asString();
+  }
   std::string message;
-  const bool ok = agent_.testConnection(message);
+  const bool ok = agent_.testConnection(url, key, message);
   sendJson(ok ? 200 : 502, "{\"ok\":" + boolean(ok) + ",\"message\":" + quote(message) + "}");
 }
 

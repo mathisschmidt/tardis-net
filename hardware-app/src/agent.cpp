@@ -156,20 +156,23 @@ void Agent::sendAck() {
   nextAckMs_ = millis() + 1000;
 }
 
-int Agent::request(const char* path, const std::string& body, std::string& response) {
+int Agent::request(const char* path, const std::string& body, std::string& response,
+                   const std::string& url, const std::string& key) {
   const Config& config = store_.config();
+  const std::string base = url.empty() ? config.serverUrl : url;
+  const std::string apiKey = key.empty() ? config.apiKey : key;
   HTTPClient http;
   http.setTimeout(kHttpTimeoutMs);
   http.setConnectTimeout(kHttpTimeoutMs);
   http.setReuse(false);
 
-  const std::string url = config.serverUrl + path;
-  if (!http.begin(url.c_str())) {
+  const std::string target = base + path;
+  if (!http.begin(target.c_str())) {
     response.clear();
     return -1;
   }
   http.addHeader("Content-Type", "application/json");
-  http.addHeader(kKeyHeader, config.apiKey.c_str());
+  http.addHeader(kKeyHeader, apiKey.c_str());
 
   const int httpStatus =
       http.POST(const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(body.data())), body.size());
@@ -195,10 +198,13 @@ void Agent::scheduleNextPoll(bool failed) {
   nextPollMs_ = millis() + status_.pollSeconds * 1000UL;
 }
 
-bool Agent::testConnection(std::string& message) {
+bool Agent::testConnection(const std::string& url, const std::string& key,
+                           std::string& message) {
   const Config& config = store_.config();
-  if (!config.complete()) {
-    message = "Fill in the server address and API key first.";
+  const std::string base = normaliseUrl(url.empty() ? config.serverUrl : url);
+  const std::string apiKey = key.empty() ? config.apiKey : key;
+  if (base.empty() || apiKey.empty()) {
+    message = "Fill in the console address and API key first.";
     return false;
   }
 
@@ -209,14 +215,14 @@ bool Agent::testConnection(std::string& message) {
   report.powerSense = readPowerSense();
 
   std::string response;
-  const int httpStatus = request(kPollPath, buildPollBody(report), response);
+  const int httpStatus = request(kPollPath, buildPollBody(report), response, base, apiKey);
   if (httpStatus == 200) {
     const PollResponse parsed = parsePollResponse(response);
     if (!parsed.ok) {
       message = "Connected, but the reply was not understood.";
       return false;
     }
-    message = "Connected. " + store_.config().serverUrl + " reports " +
+    message = "Connected. " + base + " reports " +
               (parsed.machineStatus.empty() ? std::string("no status") : parsed.machineStatus) +
               ".";
     return true;
@@ -226,7 +232,7 @@ bool Agent::testConnection(std::string& message) {
   } else if (httpStatus > 0) {
     message = "The server replied " + std::to_string(httpStatus) + ".";
   } else {
-    message = "Could not reach " + config.serverUrl +
+    message = "Could not reach " + base +
               " — check the address, and that the console isn't bound to "
               "127.0.0.1 only (it needs --host 0.0.0.0 to answer devices on the network).";
   }

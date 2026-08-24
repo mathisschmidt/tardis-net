@@ -23,6 +23,10 @@ pip install .
 tardis run --reload --port 8000
 ```
 
+`tardis run` binds `0.0.0.0` so the phone and the hardware agent on the LAN can
+reach it; pass `--host 127.0.0.1` to keep it to this machine (the ESP32 cannot
+poll a loopback-only console, and the command says so when you do).
+
 Open <http://localhost:8000>. The first visit shows the enrolment QR code; scan
 it with any TOTP app (Aegis, 1Password, Google Authenticator…), type the code,
 and you are on the console. State is written to `data/state.json`.

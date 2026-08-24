@@ -17,14 +17,47 @@ console = Console()
 
 @app.command()
 def run(
-    host: str = typer.Option("127.0.0.1", help="Interface to bind."),
+    host: str = typer.Option(
+        "0.0.0.0",
+        help="Interface to bind. The default answers the LAN, which is what the "
+        "phone and the hardware agent need; pass 127.0.0.1 to keep it local.",
+    ),
     port: int = typer.Option(8000, help="Port to listen on."),
     reload: bool = typer.Option(False, help="Reload on code changes (development only)."),
 ) -> None:
     """Start the web server."""
     import uvicorn
 
+    # Loopback-only is the one binding the ESP32 can never reach, so say so
+    # rather than letting the device fail with a bare "cannot reach the server".
+    if host in ("127.0.0.1", "localhost", "::1"):
+        console.print(
+            f"[yellow]Bound to {host} — reachable from this machine only. "
+            "The hardware agent will not be able to poll; use --host 0.0.0.0 for that."
+        )
+    else:
+        console.print(
+            f"Console on http://{_lan_address()}:{port}/ — "
+            "that is the address to enter in the device's portal."
+        )
+
     uvicorn.run("app.server.app:app", host=host, port=port, reload=reload)
+
+
+def _lan_address() -> str:
+    """Best guess at the address other devices should use to reach us."""
+    import socket
+
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # No packets are sent; this just asks the routing table which local
+        # address would be used to reach the outside world.
+        probe.connect(("192.0.2.1", 53))
+        return str(probe.getsockname()[0])
+    except OSError:
+        return socket.gethostbyname(socket.gethostname())
+    finally:
+        probe.close()
 
 
 @app.command()
