@@ -13,12 +13,13 @@
 
 #include "agent.h"
 #include "config_store.h"
+#include "services/network_station.h"
 
 namespace tardis {
 
 class Portal {
  public:
-  Portal(ConfigStore& store, Agent& agent);
+  Portal(ConfigStore& store, Agent& agent, NetworkStation& station);
 
   void begin();
   void handle() { server_.handleClient(); }
@@ -29,6 +30,7 @@ class Portal {
  private:
   ConfigStore& store_;
   Agent& agent_;
+  NetworkStation& station_;
   WebServer server_;
 
   std::string sessionToken_;
@@ -46,9 +48,9 @@ class Portal {
   void handleGetConfig();
   void handleSaveConfig();
   void handleTest();
-  void handleWifiScan();
-  void handleWifiTest();
   void handleReboot();
+  void handleForgetWifi();
+  void handleResetPassword();
   void handleNotFound();
 
   // helpers

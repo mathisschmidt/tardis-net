@@ -22,6 +22,9 @@ class ConfigStore {
   bool claimed() const { return password_.set(); }
   bool checkPassword(const std::string& password) const { return password_.matches(password); }
   void setPassword(const std::string& password);
+  /** Forget the portal password only — the device goes back to "unclaimed"
+   *  without touching the server settings or pins. */
+  void clearPassword();
 
   /** Wipe everything — the device comes back up unclaimed and unconfigured. */
   void factoryReset();

@@ -110,7 +110,7 @@ def firmware_binary() -> Path:
     build = subprocess.run(  # noqa: PLW1510 — the assert below is the check
         ["g++", "-std=c++17", "-O1", "-Iinclude", "-Isrc", "-Itest/host/shim",
          "-o", str(BINARY), "test/host/shim/host_runtime.cpp",
-         *[str(p) for p in sorted((ROOT / "src").glob("*.cpp"))]],
+         *[str(p) for p in sorted((ROOT / "src").glob("**/*.cpp"))]],
         cwd=ROOT, capture_output=True, text=True,
     )
     assert build.returncode == 0, f"host build failed:\n{build.stderr}"
@@ -199,8 +199,6 @@ def configure(device, console, *, save: bool = True):
     assert status == 200
     if save:
         status, body = device.post("/api/config", payload={
-            "wifi_ssid": "home-network",
-            "wifi_password": "hunter2hunter2",
             "server_url": console.base,
             "api_key": console.key,
             "poll_seconds": 1,
@@ -300,7 +298,8 @@ def test_portal_requires_the_password_after_claiming(device, console):
     anonymous = Http(device.base)
     assert anonymous.get("/api/config")[0] == 401
     assert anonymous.post("/api/test", payload={})[0] == 401
-    assert anonymous.get("/api/wifi/scan")[0] == 401
+    assert anonymous.post("/api/forget-wifi", payload={})[0] == 401
+    assert anonymous.post("/api/reset-password", payload={})[0] == 401
     # The claim endpoint closes behind itself.
     assert anonymous.post(
         "/api/claim", payload={"password": "another-one", "confirm": "another-one"}
@@ -309,3 +308,20 @@ def test_portal_requires_the_password_after_claiming(device, console):
     status, _ = anonymous.post("/api/login", payload={"password": PORTAL_PASSWORD})
     assert status == 200
     assert anonymous.get("/api/config")[0] == 200
+
+
+def test_reset_password_unclaims_the_device(device, console):
+    """A forgotten password must let a new one be set — not double-lock the device."""
+    configure(device, console, save=False)
+
+    status, _ = device.post("/api/reset-password")
+    assert status == 200
+
+    assert device.get("/api/status")[1]["claimed"] is False
+    # And a stale session cookie must not still work.
+    assert device.get("/api/config")[0] == 401
+
+    status, _ = device.post(
+        "/api/claim", payload={"password": "a-new-password", "confirm": "a-new-password"}
+    )
+    assert status == 200

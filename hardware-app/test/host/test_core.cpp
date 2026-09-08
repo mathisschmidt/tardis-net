@@ -209,8 +209,6 @@ static int testRunner() {
 
 static int testConfig() {
   Config config;
-  config.wifiSsid = "home";
-  config.wifiPassword = "hunter2hunter2";
   config.serverUrl = "http://192.168.1.10:8000";
   config.apiKey = "xCVEMxCqquaIsROK";
   CHECK(validate(config).empty());
@@ -218,18 +216,11 @@ static int testConfig() {
 
   Config missing;
   CHECK(!missing.complete());
-  CHECK(validate(missing).size() >= 3);
+  CHECK(validate(missing).size() >= 2);
 
   Config badUrl = config;
   badUrl.serverUrl = "192.168.1.10:8000";
   CHECK(!validate(badUrl).empty());
-
-  Config shortWifiPassword = config;
-  shortWifiPassword.wifiPassword = "abc";
-  CHECK(!validate(shortWifiPassword).empty());
-  Config openNetwork = config;
-  openNetwork.wifiPassword = "";
-  CHECK(validate(openNetwork).empty());  // open networks are allowed
 
   // Pins that would brick the board or cannot drive an output.
   for (int pin : {6, 7, 11, 34, 36, 39, -2, 99}) {

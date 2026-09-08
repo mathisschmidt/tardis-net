@@ -17,8 +17,6 @@ inline constexpr size_t kMinPortalPassword = 8;
 inline constexpr size_t kMaxField = 128;
 
 struct Config {
-  std::string wifiSsid;
-  std::string wifiPassword;
   std::string serverUrl;     // e.g. http://192.168.1.10:8000 — no trailing slash
   std::string apiKey;        // the console's pairing key
   uint32_t pollSeconds = 5;
@@ -28,9 +26,10 @@ struct Config {
   int sensePin = -1;              // -1 disables the power-sense input
   bool senseActiveHigh = true;
 
-  /** Everything needed to actually do the job. */
+  /** Everything needed to actually do the job. Wi-Fi is not this device's to
+   *  track — WiFiManager owns joining and remembering that on its own. */
   bool complete() const {
-    return !wifiSsid.empty() && !serverUrl.empty() && !apiKey.empty() && switchPin >= 0;
+    return !serverUrl.empty() && !apiKey.empty() && switchPin >= 0;
   }
 };
 
@@ -60,12 +59,6 @@ inline bool isUsableInputPin(int pin) {
 /** Validate a config edit. Returns the list of problems, empty when fine. */
 inline std::vector<std::string> validate(const Config& config) {
   std::vector<std::string> problems;
-
-  if (config.wifiSsid.empty()) problems.push_back("Wi-Fi network is required.");
-  if (config.wifiSsid.size() > 32) problems.push_back("Wi-Fi network name is too long.");
-  if (!config.wifiPassword.empty() && config.wifiPassword.size() < 8) {
-    problems.push_back("Wi-Fi password must be at least 8 characters (or empty for an open network).");
-  }
 
   const std::string& url = config.serverUrl;
   if (url.empty()) {

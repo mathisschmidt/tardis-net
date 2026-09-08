@@ -3,7 +3,7 @@
 CXX ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -Iinclude
 BUILD := .build
-HOST_SRC := $(wildcard src/*.cpp) test/host/shim/host_runtime.cpp
+HOST_SRC := $(wildcard src/*.cpp src/services/*.cpp) test/host/shim/host_runtime.cpp
 HOST_FLAGS := -std=c++17 -O1 -Iinclude -Isrc -Itest/host/shim
 
 .PHONY: test unit protocol firmware host portal assets clean

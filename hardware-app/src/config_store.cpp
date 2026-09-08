@@ -20,8 +20,6 @@ void ConfigStore::begin() {
 }
 
 void ConfigStore::load() {
-  config_.wifiSsid = readString(prefs_, "ssid");
-  config_.wifiPassword = readString(prefs_, "wifipass");
   config_.serverUrl = readString(prefs_, "server");
   config_.apiKey = readString(prefs_, "apikey");
   config_.pollSeconds = prefs_.getUInt("poll", 5);
@@ -36,8 +34,6 @@ void ConfigStore::load() {
 
 void ConfigStore::save(const Config& config) {
   config_ = config;
-  prefs_.putString("ssid", config.wifiSsid.c_str());
-  prefs_.putString("wifipass", config.wifiPassword.c_str());
   prefs_.putString("server", config.serverUrl.c_str());
   prefs_.putString("apikey", config.apiKey.c_str());
   prefs_.putUInt("poll", config.pollSeconds);
@@ -51,6 +47,12 @@ void ConfigStore::setPassword(const std::string& password) {
   password_ = makePassword(password, &ConfigStore::randomBytes);
   prefs_.putString("pwsalt", password_.salt.c_str());
   prefs_.putString("pwhash", password_.digest.c_str());
+}
+
+void ConfigStore::clearPassword() {
+  password_ = PasswordRecord{};
+  prefs_.putString("pwsalt", "");
+  prefs_.putString("pwhash", "");
 }
 
 void ConfigStore::factoryReset() {

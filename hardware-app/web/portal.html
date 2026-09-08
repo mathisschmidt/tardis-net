@@ -91,16 +91,6 @@ table.pulses td:last-child{text-align:right;color:#67e8f9;font-family:ui-monospa
 .subcard-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:.9rem}
 .subcard-title{font-size:.78rem;font-weight:600;color:#94a3b8;text-transform:uppercase;
   letter-spacing:.14em;margin:0}
-.scan-list{margin-top:.6rem;border-radius:.75rem;border:1px solid rgba(148,163,184,.14);
-  overflow:hidden}
-.scan-item{display:flex;justify-content:space-between;align-items:center;gap:.75rem;
-  width:100%;text-align:left;font:inherit;cursor:pointer;border:none;
-  background:rgba(4,7,15,.4);color:#cbd5e1;padding:.55rem .8rem;font-size:.83rem;
-  border-top:1px solid rgba(148,163,184,.08)}
-.scan-item:first-child{border-top:none}
-.scan-item:hover{background:rgba(34,211,238,.07);color:#e2e8f0}
-.scan-item .ssid{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.scan-item .meta{flex:none;color:#64748b;font-size:.76rem;font-family:ui-monospace,Menlo,monospace}
 </style>
 </head>
 <body>
@@ -184,33 +174,9 @@ table.pulses td:last-child{text-align:right;color:#67e8f9;font-family:ui-monospa
 
     <section class="card">
       <h2>Configuration</h2>
-      <p class="hint">Saved on the device. Leave a secret blank to keep the stored one.</p>
+      <p class="hint">Saved on the device. Leave a secret blank to keep the stored one.
+        (Wi-Fi network/password are set separately, in the device's own setup network.)</p>
       <form id="form-config">
-        <div class="subcard" id="wifi-box">
-          <div class="subcard-head">
-            <p class="subcard-title">Wi-Fi network</p>
-            <div class="actions" style="margin:0">
-              <button class="ghost" type="button" id="btn-scan">Scan</button>
-              <button class="ghost" type="button" id="btn-test-wifi">Test</button>
-            </div>
-          </div>
-          <div class="row">
-            <div class="field">
-              <label for="wifi-ssid">Network name</label>
-              <input type="text" id="wifi-ssid" autocomplete="off" maxlength="32" required>
-            </div>
-            <div class="field">
-              <label for="wifi-password">Password</label>
-              <div class="pwrap">
-                <input type="password" id="wifi-password" autocomplete="new-password">
-                <button type="button" class="pw-toggle" data-target="wifi-password"
-                        aria-label="Show password">👁</button>
-              </div>
-            </div>
-          </div>
-          <div class="scan-list hide" id="wifi-scan-results"></div>
-          <div class="msg" id="wifi-test-msg"></div>
-        </div>
         <div class="subcard" id="console-box">
           <div class="subcard-head">
             <p class="subcard-title">Console</p>
@@ -270,6 +236,8 @@ table.pulses td:last-child{text-align:right;color:#67e8f9;font-family:ui-monospa
       <div class="actions">
         <button class="ghost" type="button" id="btn-refresh">Refresh</button>
         <button class="danger" type="button" id="btn-reboot">Reboot</button>
+        <button class="danger" type="button" id="btn-forget-wifi">Forget Wi-Fi</button>
+        <button class="danger" type="button" id="btn-reset-password">Reset password</button>
         <button class="ghost" type="button" id="btn-logout" style="margin-left:auto">Sign out</button>
       </div>
     </section>
@@ -351,8 +319,6 @@ function renderStatus(state) {
 async function loadConfig() {
   const { ok, payload } = await api("/api/config");
   if (!ok) return;
-  $("wifi-ssid").value = payload.wifi_ssid || "";
-  $("wifi-password").placeholder = payload.wifi_password_set ? "•••••••• (stored)" : "network password";
   $("server-url").value = payload.server_url || "";
   $("api-key").placeholder = payload.api_key_set ? "•••••••• (stored)" : "pairing key from the console dashboard";
   $("key-hint").textContent = payload.api_key_hint ? "· stored " + payload.api_key_hint : "";
@@ -418,8 +384,6 @@ $("form-config").addEventListener("submit", async (event) => {
   event.preventDefault();
   clear($("config-msg"));
   const body = {
-    wifi_ssid: $("wifi-ssid").value.trim(),
-    wifi_password: $("wifi-password").value,
     server_url: $("server-url").value.trim(),
     api_key: $("api-key").value.trim(),
     poll_seconds: Number($("poll-seconds").value),
@@ -430,10 +394,8 @@ $("form-config").addEventListener("submit", async (event) => {
   };
   const { ok, payload } = await api("/api/config", { method: "POST", body: JSON.stringify(body) });
   if (!ok) return show(payload.detail || "Could not save.", $("config-msg"));
-  $("wifi-password").value = "";
   $("api-key").value = "";
-  show(payload.wifi_changed ? "Saved. Reboot to join the new network." : "Saved.",
-       $("config-msg"), "good");
+  show("Saved.", $("config-msg"), "good");
   await loadConfig();
   await refresh();
 });
@@ -467,6 +429,22 @@ $("btn-logout").addEventListener("click", async () => {
   await refresh();
 });
 
+$("btn-forget-wifi").addEventListener("click", async () => {
+  if (!window.confirm(
+    "Forget the saved Wi-Fi network? The device reboots into its own setup network so a new one can be entered."
+  )) return;
+  const { ok, payload } = await api("/api/forget-wifi", { method: "POST" });
+  if (!ok) return show(payload.detail || "Could not forget Wi-Fi.", $("config-msg"));
+  show("Wi-Fi forgotten — rebooting into its setup network.", $("config-msg"), "good");
+});
+
+$("btn-reset-password").addEventListener("click", async () => {
+  if (!window.confirm("Reset the portal password? You will need to set a new one to sign back in.")) return;
+  const { ok, payload } = await api("/api/reset-password", { method: "POST" });
+  if (!ok) return show(payload.detail || "Could not reset the password.", $("config-msg"));
+  await refresh();
+});
+
 document.addEventListener("click", (event) => {
   const button = event.target.closest(".pw-toggle");
   if (!button) return;
@@ -475,57 +453,6 @@ document.addEventListener("click", (event) => {
   input.type = showing ? "password" : "text";
   button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
   button.textContent = showing ? "👁" : "🙈";
-});
-
-function signalLabel(rssi) {
-  if (rssi >= -60) return "strong";
-  if (rssi >= -75) return "ok";
-  return "weak";
-}
-
-$("btn-scan").addEventListener("click", async () => {
-  const results = $("wifi-scan-results");
-  $("btn-scan").disabled = true;
-  $("btn-scan").textContent = "Scanning…";
-  const { ok, payload } = await api("/api/wifi/scan");
-  $("btn-scan").disabled = false;
-  $("btn-scan").textContent = "Scan";
-  if (!ok || !payload.networks) {
-    results.classList.remove("hide");
-    results.innerHTML = `<div class="scan-item">Scan failed — try again.</div>`;
-    return;
-  }
-  if (!payload.networks.length) {
-    results.classList.remove("hide");
-    results.innerHTML = `<div class="scan-item">No networks found nearby.</div>`;
-    return;
-  }
-  results.classList.remove("hide");
-  results.innerHTML = payload.networks.map((network) => `
-    <button type="button" class="scan-item" data-ssid="${network.ssid.replace(/"/g, "&quot;")}">
-      <span class="ssid">${network.secure ? "🔒 " : ""}${network.ssid}</span>
-      <span class="meta">${network.rssi} dBm · ${signalLabel(network.rssi)}</span>
-    </button>`).join("");
-  results.querySelectorAll(".scan-item[data-ssid]").forEach((item) => {
-    item.addEventListener("click", () => {
-      $("wifi-ssid").value = item.dataset.ssid;
-      $("wifi-password").focus();
-    });
-  });
-});
-
-$("btn-test-wifi").addEventListener("click", async () => {
-  clear($("wifi-test-msg"));
-  const ssid = $("wifi-ssid").value.trim();
-  if (!ssid) return show("Enter a network name first.", $("wifi-test-msg"));
-  $("btn-test-wifi").disabled = true;
-  $("btn-test-wifi").textContent = "Testing…";
-  const { ok, payload } = await api("/api/wifi/test", {
-    method: "POST", body: JSON.stringify({ ssid, password: $("wifi-password").value }),
-  });
-  show(payload.message || (ok ? "Connected." : "Failed."), $("wifi-test-msg"), ok ? "good" : "err");
-  $("btn-test-wifi").disabled = false;
-  $("btn-test-wifi").textContent = "Test";
 });
 
 refresh().then(startPolling);
