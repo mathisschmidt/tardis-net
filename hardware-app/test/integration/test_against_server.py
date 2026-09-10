@@ -51,9 +51,16 @@ class FakeDevice:
         return {KEY_HEADER: self.key}
 
     def poll(self, power_sense: bool | None = None) -> dict:
-        body = {"firmware": FIRMWARE, "ip": "192.168.1.50", "rssi": -57, "uptime_s": 42}
-        if power_sense is not None:
-            body["power_sense"] = power_sense
+        # Mirrors buildPollBody: always sent, "unknown" from a device with no
+        # sense pin fitted rather than the field being left out.
+        wire_sense = "unknown" if power_sense is None else ("on" if power_sense else "off")
+        body = {
+            "firmware": FIRMWARE,
+            "ip": "192.168.1.50",
+            "rssi": -57,
+            "uptime_s": 42,
+            "power_sense": wire_sense,
+        }
         response = self.client.post(POLL_PATH, json=body, headers=self._headers())
         assert response.status_code == 200, response.text
         return response.json()
@@ -118,16 +125,22 @@ def test_full_power_cycle_over_the_real_api(stack):
 
     console.post("/api/machine/power", json={"action": "on"})
     assert device.run_once() == "power_on"
+    # The ack alone never confirms it — only a sense-line poll does.
+    assert console.get("/api/machine").json()["status"] != "online"
+    device.poll(power_sense=True)
     assert console.get("/api/machine").json()["status"] == "online"
 
     console.post("/api/machine/power", json={"action": "off"})
     assert device.run_once() == "graceful_shutdown"
+    device.poll(power_sense=False)
     assert console.get("/api/machine").json()["status"] == "offline"
 
     console.post("/api/machine/power", json={"action": "on"})
     device.run_once()
+    device.poll(power_sense=True)
     console.post("/api/machine/power", json={"action": "hard_off"})
     assert device.run_once() == "hard_power_off"
+    device.poll(power_sense=False)
     assert console.get("/api/machine").json()["status"] == "offline"
 
     assert device.pulses == [
@@ -150,7 +163,8 @@ def test_device_details_reach_the_console(stack):
 
 
 def test_console_waits_for_the_device(stack):
-    """Between the press and the ack, the console must not claim success."""
+    """Between the press and the ack, the console must not claim success — and
+    the ack itself is not the last word either; only the sense line is."""
     console, device = stack
     console.post("/api/machine/power", json={"action": "on"})
 
@@ -163,6 +177,9 @@ def test_console_waits_for_the_device(stack):
     assert console.get("/api/machine").json()["is_on"] is False
 
     device.run_once()
+    assert console.get("/api/machine").json()["is_on"] is False  # ack still isn't enough
+
+    device.poll(power_sense=True)
     assert console.get("/api/machine").json()["is_on"] is True
 
 

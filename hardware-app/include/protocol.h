@@ -3,9 +3,16 @@
 // Mirrors server-app/app/core/machine.py. Two calls, both authenticated with
 // the pairing key in `X-Tardis-Key` — never a session cookie:
 //
-//   POST /api/hardware/poll  {firmware, ip, rssi, uptime_s, power_sense?}
+//   POST /api/hardware/poll  {firmware, ip, rssi, uptime_s,
+//                              power_sense: "on"|"off"|"unknown"}
 //     -> {server_time, poll_interval, machine:{...}, command: null | {
 //           id, action, pulse_ms, requested_at, expires_in}}
+//
+// `power_sense` is always present and is the server's *only* source of truth
+// for the machine's actual power state — a device with no sense pin fitted
+// reports "unknown" on every poll rather than omitting the field, and an ack
+// never moves the state on its own (see the docstring on MachineController in
+// machine.py).
 //
 //   POST /api/hardware/ack   {id, status: "completed"|"failed", detail?}
 //
@@ -143,9 +150,11 @@ inline std::string buildPollBody(const DeviceReport& report) {
     body += ",\"rssi\":" + std::to_string(report.rssi);
   }
   body += ",\"uptime_s\":" + std::to_string(report.uptimeSeconds);
-  if (report.powerSense >= 0) {
-    body += std::string(",\"power_sense\":") + (report.powerSense ? "true" : "false");
-  }
+  // Always sent, and always trusted over anything the server might otherwise
+  // infer from a command ack — "unknown" is the honest report from a device
+  // with no sense pin wired up, not an omission.
+  body += std::string(",\"power_sense\":\"") +
+          (report.powerSense < 0 ? "unknown" : (report.powerSense ? "on" : "off")) + "\"";
   body += "}";
   return body;
 }

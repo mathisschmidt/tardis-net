@@ -32,8 +32,9 @@ DEFAULT_STATE: dict[str, Any] = {
     "pending_secret": None,
     "auth": {"failed_attempts": 0, "locked_until": None},
     "machine": {
-        # idle states: "online" | "offline"; transient: "booting" | "shutting_down"
-        "status": "offline",
+        # idle states: "online" | "offline"; transient: "booting" | "shutting_down";
+        # "unknown" until a power-sense report ever confirms one of the above.
+        "status": "unknown",
         "changed_at": None,
         "target": None,
         "last_action": None,

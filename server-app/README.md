@@ -124,16 +124,21 @@ switch, and says so.
 
    The same command is repeated on every poll until it is acked, so a dropped
    response costs one cycle and nothing more.
-4. **Hardware acknowledges.** `POST /api/hardware/ack` with the command id. Only
-   this — from a caller that knows the key — moves the machine to `online` or
-   `offline`.
+4. **Hardware acknowledges.** `POST /api/hardware/ack` with the command id. This
+   only retires the *command* — counted as delivered or failed — and the
+   machine's status reverts to wherever it was before the command was
+   requested. An ack never asserts `online` or `offline` on its own; only a
+   power-sense report does that (see step 6).
 5. **Timeout.** No ack within `TARDIS_ACK_TIMEOUT_SECONDS` and the command
    expires: the machine reverts to its previous state and the console shows what
    failed.
-6. **Power sense (optional).** A device wired to a power-sense line can report
-   `power_sense` on each poll. That is ground truth and wins over anything
-   inferred from a command — so the console stays right even when someone presses
-   the physical button.
+6. **Power sense — the only source of truth for `online`/`offline`.** Every
+   poll carries `power_sense`: `"on"`, `"off"`, or `"unknown"` from a device
+   with no sense pin fitted. A device that never reports `"on"`/`"off"` leaves
+   the machine `unknown` forever, ack or no ack — the console would rather say
+   "I don't know" than guess. When a sense line is wired up, its report wins
+   over anything inferred from a command, so the console stays right even when
+   someone presses the physical button.
 
 Each poll also records `last_seen`; without one inside
 `TARDIS_LINK_TIMEOUT_SECONDS` the console shows **Not linked** rather than a

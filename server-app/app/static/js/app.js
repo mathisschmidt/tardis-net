@@ -10,10 +10,11 @@
 
   const EMPTY_MACHINE = {
     name: "tardis",
-    status: "offline",
-    label: "Offline",
+    status: "unknown",
+    label: "Unknown",
     description: "",
     is_on: false,
+    state_known: false,
     linked: false,
     transitioning: false,
     awaiting_ack: false,
@@ -25,8 +26,8 @@
     last_error: null,
     boot_count: 0,
     can_power_on: true,
-    can_power_off: false,
-    can_hard_power_off: false,
+    can_power_off: true,
+    can_hard_power_off: true,
   };
 
   const EMPTY_HARDWARE = {
@@ -153,6 +154,7 @@
       get pillClass() {
         if (!this.machine.linked) return "status-pill-offline";
         return {
+          unknown: "status-pill-offline",
           online: "status-pill-online",
           offline: "status-pill-offline",
           booting: "status-pill-busy",
@@ -163,6 +165,7 @@
       get dotClass() {
         if (!this.machine.linked) return "bg-slate-500";
         return {
+          unknown: "bg-slate-500",
           online: "bg-emerald-400",
           offline: "bg-slate-500",
           booting: "bg-amber-300",
@@ -171,6 +174,7 @@
       },
 
       sinceLabel() {
+        if (!this.machine.state_known) return "State unknown";
         return this.machine.is_on ? `Online for ${formatDuration(this.machine.since_seconds)}` :
           `Idle for ${formatDuration(this.machine.since_seconds)}`;
       },

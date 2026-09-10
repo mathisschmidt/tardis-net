@@ -50,10 +50,11 @@ class AuthStatusOut(BaseModel):
 
 class MachineOut(BaseModel):
     name: str
-    status: Literal["offline", "booting", "online", "shutting_down"]
+    status: Literal["unknown", "offline", "booting", "online", "shutting_down"]
     label: str
     description: str
     is_on: bool
+    state_known: bool
     linked: bool
     transitioning: bool
     awaiting_ack: bool
@@ -94,8 +95,10 @@ class HardwarePollIn(BaseModel):
     ip: str | None = Field(default=None, max_length=45)
     rssi: int | None = Field(default=None, ge=-120, le=0)
     uptime_s: int | None = Field(default=None, ge=0)
-    # Only sent by a device wired to a power-sense line; ground truth when present.
-    power_sense: bool | None = None
+    # Always sent on a real poll — "unknown" from a device with no sense pin
+    # fitted, "on"/"off" as ground truth otherwise. None only when the caller
+    # (the ack route's internal heartbeat) isn't reporting sense at all.
+    power_sense: Literal["on", "off", "unknown"] | None = None
 
 
 class CommandOut(BaseModel):

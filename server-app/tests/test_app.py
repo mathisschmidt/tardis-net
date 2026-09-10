@@ -168,6 +168,8 @@ def test_health_is_public(client):
 
 def test_power_cycle_needs_the_hardware_to_ack(client):
     enrol(client)
+    assert client.get("/api/machine").json()["status"] == "unknown"
+    poll(client, power_sense="off")
     assert client.get("/api/machine").json()["status"] == "offline"
 
     booting = client.post("/api/machine/power", json={"action": "on"}).json()
@@ -184,13 +186,18 @@ def test_power_cycle_needs_the_hardware_to_ack(client):
     assert command["action"] == "power_on"
     assert command["pulse_ms"] == 500
 
+    # An ack only retires the command — it does not assert the new state.
     ack(client, command["id"])
+    assert client.get("/api/machine").json()["status"] == "offline"
+    poll(client, power_sense="on")
     assert client.get("/api/machine").json()["status"] == "online"
 
     off = client.post("/api/machine/power", json={"action": "toggle"}).json()
     assert off["status"] == "shutting_down"
     assert off["pending_action"] == "graceful_shutdown"
     ack(client, poll(client)["command"]["id"])
+    assert client.get("/api/machine").json()["is_on"] is True  # still waiting for the poll
+    poll(client, power_sense="off")
     assert client.get("/api/machine").json()["is_on"] is False
 
 
@@ -323,6 +330,7 @@ def test_hard_power_off_asks_for_a_five_second_hold(client):
     enrol(client)
     client.post("/api/machine/power", json={"action": "on"})
     ack(client, poll(client)["command"]["id"])
+    poll(client, power_sense="on")
 
     state = client.post("/api/machine/power", json={"action": "hard_off"}).json()
     assert state["pending_action"] == "hard_power_off"
@@ -330,6 +338,8 @@ def test_hard_power_off_asks_for_a_five_second_hold(client):
     assert command["action"] == "hard_power_off"
     assert command["pulse_ms"] == 5000
     ack(client, command["id"])
+    assert client.get("/api/machine").json()["status"] == "online"  # ack alone doesn't settle it
+    poll(client, power_sense="off")
     assert client.get("/api/machine").json()["status"] == "offline"
 
 
@@ -344,11 +354,14 @@ def test_hard_power_off_overrides_a_stuck_boot(client):
     command = poll(client)["command"]
     assert command["action"] == "hard_power_off"
     ack(client, command["id"])
+    assert client.get("/api/machine").json()["transitioning"] is False
+    poll(client, power_sense="off")
     assert client.get("/api/machine").json()["status"] == "offline"
 
 
 def test_failed_ack_reverts_and_records_the_error(client):
     enrol(client)
+    poll(client, power_sense="off")
     client.post("/api/machine/power", json={"action": "on"})
     command = poll(client)["command"]
     ack(client, command["id"], status="failed", detail="gpio busy")
@@ -362,6 +375,7 @@ def test_failed_ack_reverts_and_records_the_error(client):
 
 def test_unacked_command_expires_and_reverts(client, monkeypatch):
     enrol(client)
+    poll(client, power_sense="off")
     client.post("/api/machine/power", json={"action": "on"})
     assert client.get("/api/machine").json()["status"] == "booting"
 
@@ -391,19 +405,57 @@ def test_ack_for_an_unknown_command_is_refused(client):
 def test_power_sense_report_is_ground_truth(client):
     """A device wired to a sense line settles the state, even without a command."""
     enrol(client)
-    poll(client, power_sense=True)
+    poll(client, power_sense="on")
     assert client.get("/api/machine").json()["status"] == "online"
-    poll(client, power_sense=False)
+    poll(client, power_sense="off")
     assert client.get("/api/machine").json()["status"] == "offline"
 
 
 def test_power_sense_confirms_a_pending_command(client):
     enrol(client)
     client.post("/api/machine/power", json={"action": "on"})
-    poll(client, power_sense=True)
+    poll(client, power_sense="on")
     state = client.get("/api/machine").json()
     assert state["status"] == "online"
     assert state["transitioning"] is False
+
+
+def test_no_sense_pin_reports_unknown_and_ack_cannot_settle_it(client):
+    """A device with no sense pin fitted always reports "unknown" — the ack
+    that follows a pulse never gets to assert online/offline on its own."""
+    enrol(client)
+    payload = poll(client, power_sense="unknown")
+    assert payload["machine"]["status"] == "unknown"
+
+    client.post("/api/machine/power", json={"action": "on"})
+    ack(client, poll(client, power_sense="unknown")["command"]["id"])
+    state = client.get("/api/machine").json()
+    assert state["status"] == "unknown"
+    assert state["state_known"] is False
+
+
+def test_unknown_state_offers_every_action_and_no_side_can_be_ruled_out(client):
+    enrol(client)
+    poll(client, power_sense="unknown")
+    state = client.get("/api/machine").json()
+    assert state["can_power_on"] is True
+    assert state["can_power_off"] is True
+    assert state["can_hard_power_off"] is True
+
+    # Neither direction can be refused as "already there" while unknown.
+    assert client.post("/api/machine/power", json={"action": "on"}).status_code == 200
+    ack(client, poll(client, power_sense="unknown")["command"]["id"])
+    assert client.post("/api/machine/power", json={"action": "off"}).status_code == 200
+
+
+def test_an_explicit_unknown_report_overrides_a_stale_status(client):
+    """The device losing its sense wire (or being reconfigured) must not leave
+    a confirmed-looking status stuck from before."""
+    enrol(client)
+    poll(client, power_sense="on")
+    assert client.get("/api/machine").json()["status"] == "online"
+    poll(client, power_sense="unknown")
+    assert client.get("/api/machine").json()["status"] == "unknown"
 
 
 # ------------------------------------------------------- auth coverage audit

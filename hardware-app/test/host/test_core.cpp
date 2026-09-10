@@ -133,9 +133,11 @@ static int testProtocol() {
   CHECK(body.find("\"firmware\":\"1.0.0\"") != std::string::npos);
   CHECK(body.find("\"ip\":\"192.168.1.50\"") != std::string::npos);
   CHECK(body.find("\"rssi\":-57") != std::string::npos);
-  CHECK(body.find("power_sense") == std::string::npos);  // no sense pin fitted
+  CHECK(body.find("\"power_sense\":\"unknown\"") != std::string::npos);  // no sense pin fitted
   report.powerSense = 1;
-  CHECK(buildPollBody(report).find("\"power_sense\":true") != std::string::npos);
+  CHECK(buildPollBody(report).find("\"power_sense\":\"on\"") != std::string::npos);
+  report.powerSense = 0;
+  CHECK(buildPollBody(report).find("\"power_sense\":\"off\"") != std::string::npos);
 
   CHECK(buildAckBody("abc", true) == R"({"id":"abc","status":"completed"})");
   CHECK(buildAckBody("abc", false, "gpio busy") ==

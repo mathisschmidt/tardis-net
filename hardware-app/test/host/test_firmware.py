@@ -256,11 +256,9 @@ def test_a_console_command_pulses_the_switch(device, console, action, wire):
     wait_for(lambda: (device.get("/api/status")[1].get("link") or {}).get("linked"),
              what="the device to link")
 
-    if action == "hard_off":
-        # hard_off is only offered while the machine is on; get it there first.
-        console.post("/api/machine/power", payload={"action": "on"})
-        wait_for(lambda: console.get("/api/machine")[1]["status"] == "online",
-                 what="the machine to come online")
+    # This device has no sense pin (see configure()), so its state is always
+    # "unknown" — and the hard-off hold is offered in exactly that case, same
+    # as when the machine might genuinely be on. No prerequisite needed.
 
     before = len(pulses(device.serial()))
 
@@ -279,10 +277,11 @@ def test_a_console_command_pulses_the_switch(device, console, action, wire):
     held = released[0] - closed[0]
     assert abs(held - expected) < 250, f"held {held}ms, expected ~{expected}ms"
 
-    # And the console only moves once the device has acked.
-    settled = "online" if wire == "power_on" else "offline"
-    wait_for(lambda: console.get("/api/machine")[1]["status"] == settled,
-             what=f"the console to report {settled}")
+    # The ack retires the command — but with no sense pin fitted, the console
+    # still has no way to confirm the real state, and must not pretend it does.
+    wait_for(lambda: console.get("/api/machine")[1]["transitioning"] is False,
+             what="the command to be acked")
+    assert console.get("/api/machine")[1]["status"] == "unknown"
     assert console.get("/api/hardware")[1]["commands_ok"] >= 1
 
 

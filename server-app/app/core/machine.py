@@ -2,13 +2,17 @@
 
 The server never touches a wire itself. It holds at most one *pending command*
 for the ESP32 sitting on ``tardis``'s front-panel switch; the device picks the
-command up on its next poll, pulses the switch for ``pulse_ms``, and acks. Only
-that ack — from a caller that knows the pairing key — moves the machine to its
-new state. An unacked command expires after ``ack_timeout_seconds`` and the
-machine reverts to where it was, with the failure surfaced to the console.
+command up on its next poll, pulses the switch for ``pulse_ms``, and acks. An
+unacked command expires after ``ack_timeout_seconds`` and the machine reverts
+to where it was, with the failure surfaced to the console.
 
-A device wired to a power-sense line can also report the machine's true state on
-each poll; that report wins over anything inferred from a command.
+An ack only settles the *command* — it retires the pending pulse and counts it
+as delivered or failed. It never asserts the machine's power state: an ack is
+"we pulsed the switch", not "the machine is now on". The only thing that ever
+moves ``status`` towards "online"/"offline" is a power-sense report on a poll,
+which is why a device with no sense pin fitted reports "unknown" rather than
+omitting it — the console would otherwise have no honest way to say it simply
+doesn't know, and always waits for that report rather than the ack.
 """
 
 from __future__ import annotations
@@ -21,7 +25,8 @@ from typing import Any, Literal
 from .config import Settings
 from .storage import StateStore
 
-Status = Literal["offline", "booting", "online", "shutting_down"]
+Status = Literal["unknown", "offline", "booting", "online", "shutting_down"]
+PowerSense = Literal["on", "off", "unknown"]
 Action = Literal["power_on", "graceful_shutdown", "hard_power_off"]
 
 TRANSIENT: dict[str, Status] = {"booting": "online", "shutting_down": "offline"}
@@ -67,12 +72,14 @@ PAIRING_KEY_LENGTH = 16
 _PAIRING_KEY_ALPHABET = string.ascii_letters + string.digits
 
 LABELS: dict[str, str] = {
+    "unknown": "Unknown",
     "offline": "Offline",
     "booting": "Materialising",
     "online": "Online",
     "shutting_down": "Dematerialising",
 }
 DESCRIPTIONS: dict[str, str] = {
+    "unknown": "No power-sense wire fitted — the console cannot confirm the real state.",
     "offline": "The console room is dark. Power is cut.",
     "booting": "Time rotor spinning up — boot sequence in progress.",
     "online": "All systems nominal. Ready when you are.",
@@ -145,20 +152,28 @@ class MachineController:
         ip: str | None = None,
         rssi: int | None = None,
         uptime_s: int | None = None,
-        power_sense: bool | None = None,
+        power_sense: PowerSense | None = None,
     ) -> None:
-        """Record a heartbeat, and trust a power-sense report over our own guess.
+        """Record a heartbeat, and apply the power-sense report — the only thing
+        that ever moves ``status``.
 
-        Only fields the device actually reported are written — an ack, or a poll
-        with an empty body, must not blank out what an earlier poll told us.
+        Only the detail fields the device actually reported are written — an
+        ack, or a poll with an empty body, must not blank out what an earlier
+        poll told us. ``power_sense`` is different: ``None`` here means the
+        caller (the ack route) is not reporting sense at all, not that the
+        device is unsure, so it alone is left untouched in that case.
         """
         reported = {"firmware": firmware, "ip": ip, "rssi": rssi, "uptime_s": uptime_s}
         self._store.update(
             "hardware",
             {"last_seen": time.time(), **{k: v for k, v in reported.items() if v is not None}},
         )
-        if power_sense is not None:
-            self._apply_power_sense(power_sense)
+        if power_sense == "on":
+            self._apply_power_sense(True)
+        elif power_sense == "off":
+            self._apply_power_sense(False)
+        elif power_sense == "unknown":
+            self._apply_unknown_sense()
 
     def _apply_power_sense(self, powered: bool) -> None:
         """A sense line is ground truth — it also settles a pending transition."""
@@ -186,6 +201,23 @@ class MachineController:
             updates["boot_count"] = int(machine.get("boot_count") or 0) + 1
         self._store.update("machine", updates)
 
+    def _apply_unknown_sense(self) -> None:
+        """The device has just told us, honestly, that it cannot tell.
+
+        Leaves a transition the console requested alone — that guess is more
+        useful than blanking it mid-flight — but otherwise "unknown" is as much
+        ground truth as "on" or "off" and overrides any stale cached status.
+        """
+        machine = self._store.get("machine")
+        if machine.get("pending"):
+            return
+        if machine.get("status") == "unknown":
+            return
+        self._store.update(
+            "machine",
+            {"status": "unknown", "changed_at": time.time(), "target": None, "last_error": None},
+        )
+
     # ------------------------------------------------------------------ read
 
     def state(self) -> dict[str, Any]:
@@ -197,7 +229,7 @@ class MachineController:
             machine = self._store.update(
                 "machine",
                 {
-                    "status": pending.get("previous_status") or "offline",
+                    "status": pending.get("previous_status") or "unknown",
                     "changed_at": time.time(),
                     "target": None,
                     "pending": None,
@@ -232,12 +264,18 @@ class MachineController:
             remaining = max(0, round(total - waited))
             progress = max(0, min(100, round(waited / total * 100)))
 
+        # Without a sense pin the console never learns the real state, so it
+        # cannot rule either direction out — both the boot pulse and the
+        # shutdown pulse stay available, same as the escape-hatch hold below.
+        known = status != "unknown"
+
         return {
             "name": self._settings.machine_name,
             "status": status,
             "label": LABELS.get(status, status.title()),
             "description": DESCRIPTIONS.get(status, ""),
             "is_on": status == "online",
+            "state_known": known,
             "linked": self.linked,
             "transitioning": transitioning,
             "awaiting_ack": pending is not None and pending.get("delivered_at") is not None,
@@ -249,10 +287,10 @@ class MachineController:
             "last_action": machine.get("last_action"),
             "last_error": machine.get("last_error"),
             "boot_count": machine.get("boot_count", 0),
-            "can_power_on": status == "offline" and not transitioning,
-            "can_power_off": status == "online" and not transitioning,
+            "can_power_on": (status == "offline" or not known) and not transitioning,
+            "can_power_off": (status == "online" or not known) and not transitioning,
             # The 5s hold is the escape hatch: allowed whenever power may be on,
-            # including out of a boot that never finished.
+            # including out of a boot that never finished or an unknown state.
             "can_hard_power_off": status != "offline",
         }
 
@@ -268,10 +306,13 @@ class MachineController:
                 f"{current['name']} is already {current['label'].lower()} — "
                 "wait for the hardware to confirm."
             )
-        if wire_action == "power_on" and current["is_on"]:
+        # These "already there" guards only fire on a *confirmed* status — an
+        # unknown state (no sense pin, or no report yet) can't rule either
+        # direction out, so both pulses stay available rather than guessing.
+        if wire_action == "power_on" and current["status"] == "online":
             raise MachineError(f"{current['name']} is already online.")
         turning_off = wire_action in ("graceful_shutdown", "hard_power_off")
-        if turning_off and not current["is_on"] and not current["transitioning"]:
+        if turning_off and current["status"] == "offline" and not current["transitioning"]:
             raise MachineError(f"{current['name']} is already offline.")
 
         machine = self._store.get("machine")
@@ -282,7 +323,7 @@ class MachineController:
             "pulse_ms": PULSE_MS[wire_action],
             "requested_at": now,
             "delivered_at": None,
-            "previous_status": machine.get("status") or "offline",
+            "previous_status": machine.get("status") or "unknown",
         }
 
         updates: dict[str, Any] = {
@@ -334,7 +375,13 @@ class MachineController:
     def acknowledge(
         self, command_id: str, *, status: str = "completed", detail: str | None = None
     ) -> dict[str, Any]:
-        """Settle a command the device has pulsed (or failed to pulse)."""
+        """Settle a command the device has pulsed (or failed to pulse).
+
+        Either way this only retires the *command* — it never asserts the
+        machine's power state. Whether the pulse actually worked is for the
+        next power-sense report to say; until then the status reverts to
+        wherever it was before the command was requested.
+        """
         machine = self._store.get("machine")
         pending = machine.get("pending")
         if not pending:
@@ -347,32 +394,26 @@ class MachineController:
             self._store.update(
                 "hardware", {"commands_ok": int(counters.get("commands_ok") or 0) + 1}
             )
-            updates: dict[str, Any] = {
-                "status": ACTION_TARGET[pending["action"]],
-                "changed_at": time.time(),
-                "target": None,
-                "pending": None,
-                "last_error": None,
-            }
-            if pending["action"] == "power_on":
-                updates["boot_count"] = int(machine.get("boot_count") or 0) + 1
+            last_error = None
         else:
             self._store.update(
                 "hardware", {"commands_failed": int(counters.get("commands_failed") or 0) + 1}
             )
-            updates = {
-                "status": pending.get("previous_status") or "offline",
-                "changed_at": time.time(),
-                "target": None,
-                "pending": None,
-                "last_error": {
-                    "message": (
-                        f"{ACTION_LABELS[pending['action']]} failed on the hardware"
-                        + (f": {detail}" if detail else ".")
-                    ),
-                    "at": time.time(),
-                },
+            last_error = {
+                "message": (
+                    f"{ACTION_LABELS[pending['action']]} failed on the hardware"
+                    + (f": {detail}" if detail else ".")
+                ),
+                "at": time.time(),
             }
+
+        updates: dict[str, Any] = {
+            "status": pending.get("previous_status") or "unknown",
+            "changed_at": time.time(),
+            "target": None,
+            "pending": None,
+            "last_error": last_error,
+        }
 
         return self._decorate(self._store.update("machine", updates))
 

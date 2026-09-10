@@ -92,12 +92,15 @@ shorts — a dry contact across the motherboard's `PWR_SW` header.
   portal's *Closes on* selector covers both, and the firmware writes the
   released level *before* the pin becomes an output so a reset cannot glitch the
   button.
-- **Optional power-sense input.** Wire a GPIO to something that is high only
-  while the machine runs (a 5 V-standby-referenced divider off a `PWR_LED`
-  header, an optocoupler across the LED). Set that pin in the portal and the
-  device reports the machine's true state on every poll — the console then shows
-  reality instead of what it last asked for, including someone pressing the
-  physical button. Leave it at `-1` to disable.
+- **Power-sense input — the console's only source of truth.** Wire a GPIO to
+  something that is high only while the machine runs (a 5 V-standby-referenced
+  divider off a `PWR_LED` header, an optocoupler across the LED). Set that pin
+  in the portal and the device reports the machine's true state on every poll
+  — the console then shows reality instead of what it last asked for,
+  including someone pressing the physical button. Leave it at `-1` and the
+  device honestly reports `"unknown"` instead: the console will not guess
+  `online`/`offline` from a command ack alone, so without this wire the
+  console can only ever say it doesn't know.
 - **Do not use GPIO 6-11** (SPI flash). GPIO 34-39 are input-only, so they are
   valid for sense and refused for the switch. The portal enforces both.
 
@@ -108,7 +111,7 @@ session cookie, which is what the operator's browser uses:
 
 ```
 POST /api/hardware/poll     {"firmware":"1.0.0","ip":"…","rssi":-57,"uptime_s":42,
-                             "power_sense":true}
+                             "power_sense":"on"}
  200 {"server_time":…, "poll_interval":5, "machine":{…},
       "command": null | {"id":"…","action":"power_on","pulse_ms":500,"expires_in":57}}
 
@@ -116,8 +119,12 @@ POST /api/hardware/ack      {"id":"…","status":"completed"}
  200 {"accepted":true,"machine":{…}}
 ```
 
-- The console only moves the machine to `online`/`offline` when **this device
-  acks**. Until then it shows the transition as in progress.
+- `power_sense` is always sent — `"on"`, `"off"`, or `"unknown"` from a device
+  with no sense pin fitted (see above) — and it is the **only** thing that
+  moves the machine to `online`/`offline` on the console. Acking a command
+  retires it (delivered or failed) but never asserts the new state by itself;
+  until a poll reports the real sense reading, the console just shows the
+  transition as no longer in progress.
 - An unacked command is repeated on every poll, so a dropped response costs one
   cycle. A command nobody acks within 60 s expires and the console reports the
   failure.
