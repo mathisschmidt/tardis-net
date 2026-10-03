@@ -31,6 +31,25 @@ Open <http://localhost:8000>. The first visit shows the enrolment QR code; scan
 it with any TOTP app (Aegis, 1Password, Google Authenticator…), type the code,
 and you are on the console. State is written to `data/state.json`.
 
+## Deploy with Docker
+
+From `server-app`, start the server with Docker Compose:
+
+```bash
+docker compose up -d --build
+```
+
+The console is available on port `8000`. Set `TARDIS_PORT` to publish a
+different host port. Compose stores the state file in the persistent
+`tardis-data` volume, so enrolment and pairing survive container recreation.
+Set `TARDIS_MACHINE`, `TARDIS_SECRET_KEY`, or `TARDIS_COOKIE_SECURE` in the
+environment (or a local `.env` file) to override their defaults. Configure
+HTTPS at your reverse proxy and set `TARDIS_COOKIE_SECURE=true` when TLS is
+enabled.
+
+Stop the server with `docker compose down`; the named volume is retained. To
+remove the persisted state as well, use `docker compose down --volumes`.
+
 ## Configuration
 
 Every setting is an environment variable — see [`.env.example`](.env.example)

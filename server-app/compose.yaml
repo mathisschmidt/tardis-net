@@ -1,0 +1,16 @@
+services:
+  server:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${TARDIS_PORT:-8000}:8000"
+    environment:
+      TARDIS_STATE_FILE: /app/data/state.json
+      TARDIS_MACHINE: ${TARDIS_MACHINE:-tardis}
+      TARDIS_SECRET_KEY: ${TARDIS_SECRET_KEY:-}
+      TARDIS_COOKIE_SECURE: ${TARDIS_COOKIE_SECURE:-false}
+    volumes:
+      - tardis-data:/app/data
+
+volumes:
+  tardis-data:

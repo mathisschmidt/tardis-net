@@ -1,6 +1,7 @@
 # PlatformIO build output
 .pio/
 .build/
+.vscode/
 
 # Generated from web/portal.html at build time
 include/web_assets.h
