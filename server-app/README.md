@@ -74,7 +74,7 @@ for the full list and defaults. The ones worth setting in production:
 | `POST` | `/api/auth/enroll` | `{"code": "123456"}` — confirms the first pairing. |
 | `POST` | `/api/auth/login` | `{"code": "123456"}` — sets the session cookie. |
 | `POST` | `/api/auth/logout` | Clears the session cookie. |
-| `GET` | `/api/state` | Machine state + preferences in one call. |
+| `GET` | `/api/state` | Machine state, hardware link and preferences in one call. |
 | `GET` | `/api/machine` | Machine state only. |
 | `POST` | `/api/machine/power` | `{"action": "on" \| "off" \| "hard_off" \| "toggle"}` — queues a command for the hardware. |
 | `GET` | `/api/hardware` | Device link status for the dashboard. |
@@ -92,7 +92,7 @@ does not open them, and the pairing key does not open anything else:
 | Method | Path | Notes |
 | --- | --- | --- |
 | `POST` | `/api/hardware/poll` | Heartbeat + "what should I do?"; returns the pending command. |
-| `POST` | `/api/hardware/ack` | "I pulsed the switch" — the only thing that settles a transition. |
+| `POST` | `/api/hardware/ack` | "I pulsed the switch" — retires the command; only power sense moves the state. |
 
 See [Wiring it to real hardware](#wiring-it-to-real-hardware).
 
@@ -157,7 +157,9 @@ switch, and says so.
    the machine `unknown` forever, ack or no ack — the console would rather say
    "I don't know" than guess. When a sense line is wired up, its report wins
    over anything inferred from a command, so the console stays right even when
-   someone presses the physical button.
+   someone presses the physical button. The reference build reads `PWR_LED`
+   straight into an ESP32 GPIO; see the
+   [hardware wiring](../hardware-app/README.md#wiring).
 
 Each poll also records `last_seen`; without one inside
 `TARDIS_LINK_TIMEOUT_SECONDS` the console shows **Not linked** rather than a
@@ -181,7 +183,7 @@ each process uses), and never on each other.
 
 ```bash
 pip install -e ".[dev]"
-pytest                   # 34 tests: enrolment, login, API, fragments, hardware protocol
+pytest                   # enrolment, login, API, fragments, hardware protocol
 ```
 
 `app/static/css/app.css` is committed and hand-maintained — there is no build
