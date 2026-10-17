@@ -7,9 +7,12 @@ Home for the tools that keep `tardis` reachable.
   its status live. Setup and API reference in
   [`server-app/README.md`](server-app/README.md).
 - [`hardware-app/`](hardware-app/) — the ESP32 that actually presses the switch.
-  It polls the console for work and holds `tardis`'s power button for 500 ms or
-  5 s depending on what was asked. Wiring, first-run setup and its config portal
-  in [`hardware-app/README.md`](hardware-app/README.md).
+  It polls the console for work, holds `tardis`'s power button for 500 ms or 5 s
+  depending on what was asked, and reads the power LED so the console knows
+  whether the machine is really on. The ESP32 is the only hardware: it is wired
+  straight onto the front-panel headers and powered from one of `tardis`'s
+  standby USB ports. Wiring, first-run setup and its config portal are in
+  [`hardware-app/README.md`](hardware-app/README.md).
 - [`host/`](host/) — `tardis-net`, a small command for `tardis` itself: it picks
   which OS the next boot lands in. Setup below in
   [Setting up tardis](#setting-up-tardis-the-host).
@@ -29,6 +32,9 @@ that key, and neither credential opens the other's doors.
   On Windows Sunshine runs as a system service: it starts at boot and can stream
   the login screen. On Fedora it needs a logged-in Wayland session, auto-login,
   and an unlocked keyring, which is fragile when nobody is at the machine.
+
+The console's online/offline comes from the power LED, so it shows whether
+`tardis` is on, not which OS is running.
 
 Once you are in Fedora you decide: stay, or run `tardis-net go-to-windows` so
 the **next** boot is Windows. That choice holds for one boot only. Whatever

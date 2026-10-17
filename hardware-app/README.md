@@ -1,7 +1,7 @@
 # hardware-app
 
-An ESP32 wired across the front-panel power switch of the machine called
-`tardis`. It asks [`server-app`](../server-app) what to do every few seconds and,
+An ESP32 wired straight onto the front-panel power switch and power LED of
+the machine called `tardis`. It asks [`server-app`](../server-app) what to do every few seconds and,
 when told to, holds the switch closed for exactly as long as the action needs:
 
 | Action | Pulse | What it does to an ATX machine |
@@ -37,7 +37,8 @@ No computer or serial monitor is needed for any of this — a phone is enough.
    asks you to choose one. From then on that page always asks for it — the
    same shape as the console's "enrol once, then just the code".
 5. **Configure it.** Fill in the console address (`http://<host>:8000`) and
-   the **pairing key** copied from the console's dashboard, then save.
+   the **pairing key** copied from the console's dashboard, and the switch and
+   sense GPIOs you wired (see [Wiring](#wiring)), then save.
 6. **Check the console.** The dashboard's *Hardware link* card turns to
    `Polling` within a few seconds, and the power button starts working.
 
@@ -71,36 +72,44 @@ behind a confirmation prompt:
 
 ## Wiring
 
-The ESP32 does not switch mains. It closes the same two pins the case button
-shorts — a dry contact across the motherboard's `PWR_SW` header.
+Nothing sits between the ESP32 and the motherboard: no relay and no
+optocoupler. Two front-panel headers, four wires, and the ESP32 is the only
+hardware. It never switches mains; it pulls the same two `PWR_SW` pins together
+that the case button shorts, and reads the same `PWR_LED` pins the case LED
+lights from.
 
 ```
-   ESP32                       relay / opto             motherboard
-   ┌──────────┐                ┌─────────┐              ┌────────────┐
-   │ GPIO 26  ├───────────────►│ IN      │              │  PWR_SW  ○ │
-   │          │                │      NO ├──────────────┤          │ │
-   │ GND      ├───────────────►│ GND  COM├──────────────┤          ○ │
-   │ 5V/3V3   ├───────────────►│ VCC     │              └────────────┘
-   └──────────┘                └─────────┘
+   ESP32 (powered from a tardis USB port)         motherboard front panel
+   ┌──────────────────┐                           ┌───────────────┐
+   │ switch GPIO (26) ├───────────────────────────┤ PWR_SW  +   ○ │
+   │ GND              ├───────────────────────────┤ PWR_SW  −   ○ │
+   │ sense GPIO       ├───────────────────────────┤ PWR_LED +   ○ │
+   │ GND              ├───────────────────────────┤ PWR_LED −   ○ │
+   └──────────────────┘                           └───────────────┘
 ```
 
-- **Any isolated dry-contact output works**: a small relay module, a solid-state
-  relay, or an optocoupler (a 4N35 with a 220 Ω series resistor is plenty — the
-  header is 3.3 V at a few mA). Isolation is the point: the ESP32 and the
-  machine keep separate grounds.
-- **Set the polarity in the portal.** Most relay boards close on `LOW`; the
-  portal's *Closes on* selector covers both, and the firmware writes the
-  released level *before* the pin becomes an output so a reset cannot glitch the
-  button.
-- **Power-sense input — the console's only source of truth.** Wire a GPIO to
-  something that is high only while the machine runs (a 5 V-standby-referenced
-  divider off a `PWR_LED` header, an optocoupler across the LED). Set that pin
-  in the portal and the device reports the machine's true state on every poll
-  — the console then shows reality instead of what it last asked for,
-  including someone pressing the physical button. Leave it at `-1` and the
-  device honestly reports `"unknown"` instead: the console will not guess
-  `online`/`offline` from a command ack alone, so without this wire the
-  console can only ever say it doesn't know.
+- **Both GPIOs are chosen in the portal.** The switch defaults to GPIO 26. Sense
+  defaults to `-1` (off), so set it to the pin the `PWR_LED +` wire is on.
+- **Set the polarity in the portal.** *Closes on* picks the level that presses
+  the button, and *Machine is on when* picks the level that means the LED is lit.
+  If a press does nothing, or the console shows the machine off while it runs,
+  flip the matching selector. The firmware writes the released level *before*
+  the pin becomes an output, so a reset cannot glitch the button.
+- **No isolation, on purpose.** The ESP32 shares ground with the motherboard and
+  its pins sit directly on the headers. That is not textbook practice, but the
+  front-panel pins only carry a few mA at standby voltage, so it is fine here. If
+  a board ever puts more than 3.3 V on those pins, put an optocoupler back in.
+- **Power sense is the console's only source of truth.** With `PWR_LED` wired,
+  the device reports the machine's real state on every poll. The console then
+  shows reality instead of what it last asked for, even when someone presses the
+  physical button. Leave the sense pin at `-1` and the device honestly reports
+  `"unknown"`: the console won't guess `online`/`offline` from a command ack
+  alone.
+- **Power for the ESP32 comes from a tardis USB port that stays live while the
+  machine is off.** In the BIOS, disable ErP/EuP (or enable USB power in S5),
+  otherwise the ESP32 goes dark with the machine and can never turn it back on.
+  A hard power off cuts only the machine, not the standby rail, so the ESP32
+  keeps running.
 - **Do not use GPIO 6-11** (SPI flash). GPIO 34-39 are input-only, so they are
   valid for sense and refused for the switch. The portal enforces both.
 
