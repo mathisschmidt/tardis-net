@@ -8,9 +8,11 @@
 //   graceful shutdown   500 ms
 //   hard power off      5 s
 //
-// Wi-Fi is handled by WiFiManager: on first boot (or if it loses the network)
-// it opens its own setup AP to collect the SSID/password, then remembers and
-// rejoins it on its own from then on. The server address and API key are
+// Wi-Fi is handled by WiFiManager: on first boot it opens its own setup AP to
+// collect the SSID/password and remembers them. From then on the saved network
+// is retried every 30 s whenever it is unreachable (e.g. the router is slower
+// to boot after a power cut); the setup AP only reopens, for 5 minutes at a
+// time, after 10 minutes without a connection. The server address and API key are
 // entered separately, in this device's own web portal — reachable at
 // tardis.local once it is on the real network (or tardis-2.local, tardis-3.local,
 // ... if another tardis is already claiming that name there) — which is
@@ -63,7 +65,9 @@ void loop() {
   if (portalStarted) portal.handle();
   agent.update(station.connected());
 
-  if (portal.rebootRequested()) {
+  // The station asks for a restart only after being offline for minutes, so
+  // waiting for a pulse that is still running to finish costs nothing.
+  if (portal.rebootRequested() || (station.restartRequested() && !agent.busy())) {
     Serial.println("[portal] rebooting");
     agent.begin();  // release the switch before the restart
     delay(100);

@@ -43,6 +43,11 @@ class WiFiClass {
   wifi_mode_t getMode() const { return mode_; }
 
   void begin(const char* ssid, const char* password = nullptr);
+  /** Rejoin with the credentials of the last begin(ssid, password). */
+  void begin() {
+    const std::string ssid = pendingSsid_, password = pendingPassword_;
+    begin(ssid.c_str(), password.c_str());
+  }
   void disconnect(bool = false, bool = false);
   wl_status_t status();
 

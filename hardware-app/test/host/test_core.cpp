@@ -16,6 +16,7 @@
 #include "protocol.h"
 #include "runner.h"
 #include "sha256.h"
+#include "wifi_keeper.h"
 
 static int checks = 0;
 #define CHECK(cond)                                                            \
@@ -292,12 +293,115 @@ static int testCrypto() {
   return 0;
 }
 
+// Runs the keeper from `from` to `to` (inclusive) one second at a time and
+// counts what it asked for. The station's state never changes in between.
+struct WifiTally {
+  int retries = 0, opens = 0, closes = 0, restarts = 0;
+};
+static WifiTally runKeeper(WifiKeeper& keeper, bool connected, uint32_t from, uint32_t to) {
+  WifiTally tally;
+  for (uint32_t t = from; t <= to; t += 1000) {
+    switch (keeper.update(connected, t)) {
+      case WifiAction::Retry: tally.retries++; break;
+      case WifiAction::OpenSetup: tally.opens++; break;
+      case WifiAction::CloseSetup: tally.closes++; break;
+      case WifiAction::Restart: tally.restarts++; break;
+      case WifiAction::None: break;
+    }
+  }
+  return tally;
+}
+
+static int testWifiKeeper() {
+  const uint32_t s = 1000, min = 60 * s;
+
+  // Power cut: we boot with a saved network, the router is back after 2 min.
+  // The saved network is retried every 30 s and the setup AP never opens.
+  {
+    WifiKeeper keeper(true, 0);
+    WifiTally down = runKeeper(keeper, false, 0, 2 * min);
+    CHECK(down.retries == 4);
+    CHECK(down.opens == 0 && down.restarts == 0);
+    CHECK(keeper.update(true, 2 * min + s) == WifiAction::None);
+    CHECK(!keeper.setupOpen());
+  }
+
+  // Router gone for good at boot (or its password changed): after 10 min the
+  // setup AP opens for 5 min, then closes and the retries resume — the cycle
+  // repeats rather than the device parking itself in setup mode.
+  {
+    WifiKeeper keeper(true, 0);
+    WifiTally first = runKeeper(keeper, false, 0, 10 * min - s);
+    CHECK(first.retries == 19 && first.opens == 0);
+    CHECK(keeper.update(false, 10 * min) == WifiAction::OpenSetup);
+    CHECK(keeper.setupOpen());
+    // No retries while the AP is up — WiFiManager switches the station off.
+    WifiTally open = runKeeper(keeper, false, 10 * min + s, 15 * min - s);
+    CHECK(open.retries == 0 && open.opens == 0 && open.closes == 0);
+    CHECK(keeper.update(false, 15 * min) == WifiAction::CloseSetup);
+    CHECK(!keeper.setupOpen());
+    WifiTally again = runKeeper(keeper, false, 15 * min + s, 25 * min - s);
+    CHECK(again.retries == 19 && again.opens == 0);
+    CHECK(keeper.update(false, 25 * min) == WifiAction::OpenSetup);
+  }
+
+  // A new network entered in the setup AP: joining closes the window.
+  {
+    WifiKeeper keeper(true, 0);
+    runKeeper(keeper, false, 0, 10 * min);
+    CHECK(keeper.setupOpen());
+    CHECK(keeper.update(true, 11 * min) == WifiAction::None);
+    CHECK(!keeper.setupOpen());
+  }
+
+  // Already online this boot, then a short drop: retries only.
+  {
+    WifiKeeper keeper(true, 0);
+    CHECK(keeper.update(true, s) == WifiAction::None);
+    WifiTally drop = runKeeper(keeper, false, 2 * s, 3 * min);
+    CHECK(drop.retries == 5 && drop.opens == 0 && drop.restarts == 0);
+    CHECK(keeper.update(true, 3 * min + s) == WifiAction::None);
+  }
+
+  // Already online this boot, then offline for 10 min: our portal holds port
+  // 80, so it asks for a restart instead of opening the setup AP.
+  {
+    WifiKeeper keeper(true, 0);
+    CHECK(keeper.update(true, s) == WifiAction::None);
+    WifiTally down = runKeeper(keeper, false, 2 * s, 10 * min);
+    CHECK(down.opens == 0 && down.restarts == 0);
+    CHECK(keeper.update(false, 10 * min + s) == WifiAction::Restart);
+  }
+
+  // Nothing saved (first install / after Forget Wi-Fi): WiFiManager's own
+  // setup AP is already up and stays up; the keeper stays out of the way.
+  {
+    WifiKeeper keeper(false, 0);
+    WifiTally idle = runKeeper(keeper, false, 0, 60 * min);
+    CHECK(idle.retries == 0 && idle.opens == 0 && idle.closes == 0 && idle.restarts == 0);
+    // ...until a network is entered there and joined; then drops are retried.
+    CHECK(keeper.update(true, 61 * min) == WifiAction::None);
+    WifiTally drop = runKeeper(keeper, false, 61 * min + s, 62 * min + s);
+    CHECK(drop.retries == 2);
+  }
+
+  // millis() wraps after ~49 days; the intervals must survive it.
+  {
+    const uint32_t nearWrap = 0xFFFFFFFFu - 10 * s;
+    WifiKeeper keeper(true, nearWrap);
+    CHECK(keeper.update(false, nearWrap + 29 * s) == WifiAction::None);
+    CHECK(keeper.update(false, nearWrap + 30 * s) == WifiAction::Retry);
+  }
+  return 0;
+}
+
 int main() {
   if (testCrypto()) return 1;
   if (testJson()) return 1;
   if (testProtocol()) return 1;
   if (testRunner()) return 1;
   if (testConfig()) return 1;
+  if (testWifiKeeper()) return 1;
   std::printf("ok — %d checks passed\n", checks);
   return 0;
 }

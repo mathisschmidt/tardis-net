@@ -10,6 +10,12 @@
 class WiFiManager {
  public:
   void setConfigPortalBlocking(bool) {}
+  void setConnectTimeout(unsigned long) {}
+  void setEnableConfigPortal(bool) {}
+  // The fake radio always "has" a network to join, so report one as saved.
+  bool getWiFiIsSaved() { return true; }
+  bool startConfigPortal(const char* = nullptr, const char* = nullptr) { return false; }
+  bool stopConfigPortal() { return true; }
 
   bool autoConnect(const char* apName = nullptr, const char* apPassword = nullptr) {
     (void)apName;

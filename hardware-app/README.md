@@ -29,6 +29,13 @@ No computer or serial monitor is needed for any of this — a phone is enough.
    page by itself** within a few seconds. Pick your network, enter its
    password, and save — this screen is WiFiManager's, not this device's, so it
    looks different from the rest of the portal.
+
+   Once a network is saved, the device does **not** fall back to this setup
+   network just because it cannot reach Wi-Fi (e.g. it boots faster than the
+   router after a power cut). It retries the saved network every 30 s; only
+   after 10 minutes without a connection does `tardis-setup-XXXX` reappear,
+   for 5 minutes at a time (long enough to enter a changed router password),
+   before it goes back to retrying.
 3. **Wait for it to join, then open the portal.** Once connected, this
    device's own portal starts listening and is reachable at
    **`http://tardis.local/`** (see [Hostname](#hostname) below if another
@@ -221,7 +228,8 @@ invisible.
 ```
 include/         portable core: protocol, pulse state machine, config rules, SHA-256
 src/             the ESP32 layers: NVS, portal, agent
-src/services/    network_station.{h,cpp} — wraps WiFiManager, starts mDNS once joined
+src/services/    network_station.{h,cpp} — wraps WiFiManager, retries the saved
+                 network (policy: include/wifi_keeper.h), starts mDNS once joined
 web/             the portal UI (embedded into the firmware at build time)
 tools/           the embed script
 test/host/       native unit tests, the Arduino shims, and the firmware end-to-end test
