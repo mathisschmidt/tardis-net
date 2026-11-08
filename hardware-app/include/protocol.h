@@ -32,7 +32,7 @@
 
 namespace tardis {
 
-inline constexpr const char* kFirmwareVersion = "1.0.0";
+inline constexpr const char* kFirmwareVersion = "1.1.0";
 inline constexpr const char* kPollPath = "/api/hardware/poll";
 inline constexpr const char* kAckPath = "/api/hardware/ack";
 inline constexpr const char* kKeyHeader = "X-Tardis-Key";

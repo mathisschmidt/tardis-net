@@ -34,7 +34,7 @@ EXPECTED_PULSE_MS = {
 KEY_HEADER = "X-Tardis-Key"
 POLL_PATH = "/api/hardware/poll"
 ACK_PATH = "/api/hardware/ack"
-FIRMWARE = "1.0.0"
+FIRMWARE = "1.1.0"
 
 
 class FakeDevice:

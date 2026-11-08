@@ -126,7 +126,7 @@ Two calls, both authenticated with `X-Tardis-Key: <pairing key>` — never a
 session cookie, which is what the operator's browser uses:
 
 ```
-POST /api/hardware/poll     {"firmware":"1.0.0","ip":"…","rssi":-57,"uptime_s":42,
+POST /api/hardware/poll     {"firmware":"1.1.0","ip":"…","rssi":-57,"uptime_s":42,
                              "power_sense":"on"}
  200 {"server_time":…, "poll_interval":5, "machine":{…},
       "command": null | {"id":"…","action":"power_on","pulse_ms":500,"expires_in":57}}

@@ -131,7 +131,7 @@ static int testProtocol() {
   report.rssi = -57;
   report.uptimeSeconds = 3600;
   std::string body = buildPollBody(report);
-  CHECK(body.find("\"firmware\":\"1.0.0\"") != std::string::npos);
+  CHECK(body.find("\"firmware\":\"1.1.0\"") != std::string::npos);
   CHECK(body.find("\"ip\":\"192.168.1.50\"") != std::string::npos);
   CHECK(body.find("\"rssi\":-57") != std::string::npos);
   CHECK(body.find("\"power_sense\":\"unknown\"") != std::string::npos);  // no sense pin fitted

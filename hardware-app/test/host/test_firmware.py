@@ -243,7 +243,7 @@ def test_device_links_to_the_console_after_configuration(device, console):
 
     hardware = console.get("/api/hardware")[1]
     assert hardware["linked"] is True
-    assert hardware["firmware"] == "1.0.0"
+    assert hardware["firmware"] == "1.1.0"
 
 
 @pytest.mark.parametrize(
